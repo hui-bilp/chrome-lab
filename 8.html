@@ -1,0 +1,1112 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>SOLIDUS · 体积等值面工作站</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#ece7db;
+    --paper2:#e5dfd1;
+    --paper3:#f5f1e7;
+    --ink:#2a251e;
+    --ink2:#6c6456;
+    --ink3:#a79e8b;
+    --rule:#cfc7b4;
+    --rule2:#dcd5c5;
+    --accent:#c23a28;      /* oxide vermilion */
+    --accent2:#1e6a5a;     /* deep teal */
+    --amber:#c3861c;
+    --sel:#efe5d1;
+    --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --serif:"Fraunces",Georgia,"Times New Roman",serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:var(--paper);color:var(--ink);
+    font-family:var(--mono);font-size:12px;-webkit-font-smoothing:antialiased;}
+  body{overflow:hidden}
+
+  /* canvas + atmosphere */
+  #gfx{position:fixed;inset:0;width:100%;height:100%;display:block;z-index:1;touch-action:none;cursor:grab}
+  #gfx.drag{cursor:grabbing}
+  .veil{position:fixed;inset:0;z-index:2;pointer-events:none;
+    background:
+      radial-gradient(130% 110% at 50% 42%, rgba(0,0,0,0) 55%, rgba(42,37,30,.10) 100%),
+      radial-gradient(120% 90% at 50% 50%, rgba(0,0,0,0) 70%, rgba(42,37,30,.06) 100%);}
+  .grain{position:fixed;inset:0;z-index:2;pointer-events:none;opacity:.5;mix-blend-mode:multiply;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.05'/%3E%3C/svg%3E");}
+
+  /* ─── instrument panel (left) ─── */
+  #panel{position:fixed;left:0;top:0;bottom:0;width:302px;z-index:6;overflow-y:auto;
+    background:var(--paper2);border-right:1px solid var(--rule);
+    box-shadow:14px 0 40px rgba(42,37,30,.08);padding:0;}
+  #panel::-webkit-scrollbar{width:9px}
+  #panel::-webkit-scrollbar-thumb{background:var(--rule);border-radius:6px;border:2px solid var(--paper2)}
+  #panel::-webkit-scrollbar-track{background:transparent}
+
+  .masthead{padding:22px 22px 18px;border-bottom:1px solid var(--rule);
+    position:relative;overflow:hidden}
+  .masthead::after{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
+    background:linear-gradient(180deg,var(--accent),var(--amber));}
+  .wordmark{font-family:var(--serif);font-weight:500;font-size:30px;line-height:1;
+    letter-spacing:.02em;font-variant-numeric:lining-nums;}
+  .wordmark em{font-style:normal;color:var(--accent)}
+  .subtitle{margin-top:9px;font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink2);}
+  .gpubadge{display:inline-flex;gap:7px;align-items:center;margin-top:13px;padding:3px 8px;
+    border:1px solid var(--rule);border-radius:3px;font-size:9.5px;letter-spacing:.12em;color:var(--ink2);}
+  .gpubadge i{width:7px;height:7px;border-radius:50%;background:var(--accent2);display:inline-block;
+    box-shadow:0 0 0 3px rgba(30,106,90,.15)}
+
+  .module{padding:16px 22px;border-bottom:1px solid var(--rule2);animation:rise .5s both}
+  .module:nth-of-type(2){animation-delay:.04s}
+  .module:nth-of-type(3){animation-delay:.09s}
+  .module:nth-of-type(4){animation-delay:.14s}
+  .module:nth-of-type(5){animation-delay:.19s}
+  .module:nth-of-type(6){animation-delay:.24s}
+  @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .mhead{display:flex;align-items:baseline;gap:8px;margin-bottom:12px}
+  .mhead .num{font-family:var(--serif);font-size:11px;color:var(--ink3);font-style:italic}
+  .mhead h2{margin:0;font-family:var(--serif);font-weight:500;font-size:15px;letter-spacing:.01em;}
+  .mhead h2::after{content:"";display:inline-block;width:26px;height:1px;background:var(--rule);
+    vertical-align:middle;margin-left:10px;}
+
+  .row{display:flex;align-items:center;gap:9px;margin:9px 0}
+  .row label{flex:0 0 72px;color:var(--ink2);font-size:10.5px;letter-spacing:.04em}
+  .row .val{flex:0 0 52px;text-align:right;font-variant-numeric:tabular-nums;color:var(--ink);font-size:11px;font-weight:600}
+  select,input[type=file],input[type=number],button{font:inherit;color:var(--ink);background:var(--paper3);
+    border:1px solid var(--rule);border-radius:3px;padding:6px 7px;outline:none;width:100%;}
+  input[type=number]{padding:5px 6px}
+  select:hover,button:hover{border-color:var(--ink3)}
+  select:focus,input:focus,button:focus{border-color:var(--accent2)}
+  button{cursor:pointer;font-weight:500;letter-spacing:.05em;transition:.16s;background:var(--paper3)}
+  button:active{transform:translateY(1px)}
+  button.primary{background:var(--ink);border-color:var(--ink);color:var(--paper3);}
+  button.primary:hover{background:var(--accent);border-color:var(--accent)}
+  button.ghost{background:transparent}
+  input[type=range]{-webkit-appearance:none;appearance:none;flex:1;height:18px;background:transparent;outline:none;margin:0}
+  input[type=range]::-webkit-slider-runnable-track{height:2px;background:var(--rule);border-radius:0}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;margin-top:-5px;border-radius:2px;
+    background:var(--accent);border:1px solid #fff;box-shadow:0 0 0 1px var(--accent);cursor:pointer;transition:.12s}
+  input[type=range]::-webkit-slider-thumb:hover{background:#a32f20}
+  input[type=range]::-moz-range-track{height:2px;background:var(--rule)}
+  input[type=range]::-moz-range-thumb{width:11px;height:11px;border-radius:2px;background:var(--accent);border:1px solid #fff;cursor:pointer}
+  input[type=color]{width:40px;height:26px;padding:2px;border:1px solid var(--rule);border-radius:3px;background:var(--paper3);cursor:pointer}
+  .chk{display:flex;align-items:center;gap:8px;color:var(--ink2);font-size:10.5px;cursor:pointer;user-select:none}
+  .chk input{accent-color:var(--accent2);width:13px;height:13px;margin:0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+
+  #hist{width:100%;height:58px;display:block;border:1px solid var(--rule);border-radius:3px;background:var(--paper3);
+    cursor:crosshair;margin-bottom:4px}
+  .note{margin-top:10px;font-size:9.5px;line-height:1.6;color:var(--ink3);letter-spacing:.02em}
+  .note b{color:var(--ink2);font-weight:500}
+  .warn{margin-top:9px;padding:7px 9px;border-radius:3px;background:rgba(195,134,28,.14);border:1px solid rgba(195,134,28,.4);
+    color:#8a5f12;font-size:10px;line-height:1.5;display:none}
+
+  .foot{padding:16px 22px 22px;font-size:9.5px;color:var(--ink3);line-height:1.7;letter-spacing:.03em}
+  .foot .k{display:inline-block;min-width:18px;text-align:center;padding:1px 5px;margin-right:4px;
+    border:1px solid var(--rule);border-radius:2px;background:var(--paper3);color:var(--ink2)}
+
+  /* ─── HUD readouts (canvas top-right) ─── */
+  #hud{position:fixed;right:18px;top:16px;z-index:5;font-size:10px;letter-spacing:.02em;
+    color:var(--ink2);text-align:right;pointer-events:none}
+  #hud table{border-collapse:collapse}
+  #hud td{padding:1px 0 1px 16px;font-variant-numeric:tabular-nums}
+  #hud td:first-child{color:var(--ink3)}
+  #hud td b{color:var(--ink);font-weight:600}
+  #hud .hudtitle{font-family:var(--serif);font-size:11px;font-style:italic;color:var(--ink3);margin-bottom:5px}
+
+  /* hints bottom-left */
+  #hints{position:fixed;left:18px;bottom:15px;z-index:5;font-size:9.5px;color:var(--ink3);
+    letter-spacing:.03em;pointer-events:none;display:flex;gap:12px;flex-wrap:wrap}
+  #hints span b{color:var(--ink2);font-weight:500}
+
+  /* diagnostic banner */
+  #diag{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:30;display:none;
+    max-width:min(640px,calc(100vw - 40px));padding:9px 14px;border-radius:3px;
+    background:#fdf3f0;border:1px solid var(--accent);color:#8c2418;font-size:11px;line-height:1.5;
+    box-shadow:0 10px 30px rgba(42,37,30,.12);font-family:var(--mono)}
+
+  /* mobile toggle */
+  #toggle{position:fixed;left:12px;top:12px;z-index:8;display:none;width:42px;height:42px;border-radius:3px;
+    background:var(--paper2);border:1px solid var(--rule);align-items:center;justify-content:center;
+    font-family:var(--serif);font-size:19px;color:var(--ink)}
+
+  /* loading overlay */
+  #overlay{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
+    background:var(--paper);transition:opacity .5s}
+  #overlay.hide{opacity:0;pointer-events:none}
+  .mark{font-family:var(--serif);font-weight:500;font-size:44px;letter-spacing:.01em}
+  .mark em{font-style:normal;color:var(--accent)}
+  .ring{width:40px;height:40px;border-radius:50%;border:2px solid var(--rule);border-top-color:var(--accent);
+    animation:spin .9s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #ovtxt{font-size:11px;letter-spacing:.14em;color:var(--ink2);text-transform:uppercase}
+  #fail{max-width:520px;text-align:center;line-height:1.8;font-size:12.5px;color:var(--accent);display:none;padding:0 24px}
+  #fail code{background:var(--paper3);padding:1px 6px;border-radius:3px;color:var(--ink);border:1px solid var(--rule)}
+
+  @media (max-width:820px){
+    #toggle{display:flex}
+    #panel{transform:translateX(-104%);transition:transform .3s cubic-bezier(.3,.8,.2,1)}
+    #panel.open{transform:none}
+    #hints{display:none}
+  }
+</style>
+</head>
+<body>
+<canvas id="gfx"></canvas>
+<div class="veil"></div>
+<div class="grain"></div>
+
+<button id="toggle" title="控制面板">≡</button>
+
+<aside id="panel">
+  <div class="masthead">
+    <div class="wordmark">SOL<em>I</em>DUS</div>
+    <div class="subtitle">体积等值面工作站 · GPU Marching Cubes</div>
+    <div class="gpubadge"><i></i><span id="gpuname">WebGPU</span></div>
+  </div>
+
+  <section class="module">
+    <div class="mhead"><span class="num">01</span><h2>体数据</h2></div>
+    <div class="row"><label>数据集</label>
+      <select id="dataset">
+        <option value="gyroid">Gyroid 极小曲面</option>
+        <option value="asteroid">小行星 · 岩体</option>
+        <option value="orbital">电子轨道 (3d)</option>
+        <option value="bone">松质骨 · 髓腔</option>
+        <option value="gear">机械齿轮</option>
+      </select>
+    </div>
+    <div class="row"><label>体素分辨率</label>
+      <select id="res"><option>64</option><option>96</option><option selected>128</option><option>160</option><option>192</option></select>
+      <span class="val" id="dimsTag">—</span>
+    </div>
+    <button class="primary" id="gen">生成体数据</button>
+    <div class="note">或载入真实 <b>.raw</b> 体素场（医疗 CT/MRI、科学模拟、序数型体素）：</div>
+    <div class="row" style="margin-top:8px"><input type="file" id="file" accept=".raw,.dat,.bin,.vol,.img,.vox"></div>
+    <div class="grid3">
+      <input type="number" id="rw" value="256" min="2" title="宽 X">
+      <input type="number" id="rh" value="256" min="2" title="高 Y">
+      <input type="number" id="rd" value="256" min="2" title="深 Z">
+    </div>
+    <div class="row"><label>数据类型</label>
+      <select id="dtype">
+        <option value="u8">uint8</option>
+        <option value="u16">uint16 (LE)</option>
+        <option value="i16">int16 (LE)</option>
+        <option value="f32">float32 (LE)</option>
+      </select>
+    </div>
+    <button id="loadraw">载入 RAW 体数据</button>
+    <div class="warn" id="warn"></div>
+  </section>
+
+  <section class="module">
+    <div class="mhead"><span class="num">02</span><h2>等值面</h2></div>
+    <canvas id="hist" width="256" height="58"></canvas>
+    <div class="row"><label>等值阈值</label><input type="range" id="iso" min="0.01" max="0.99" step="0.002" value="0.5"><span class="val" id="isov">0.500</span></div>
+    <div class="grid2">
+      <label class="chk"><input type="checkbox" id="smooth" checked> 平滑法线</label>
+      <label class="chk"><input type="checkbox" id="cmap"> 场值色谱</label>
+    </div>
+  </section>
+
+  <section class="module">
+    <div class="mhead"><span class="num">03</span><h2>材质 · 光照</h2></div>
+    <div class="row"><label>表面颜色</label><input type="color" id="col" value="#c08163"></div>
+    <div class="row"><label>不透明度</label><input type="range" id="opa" min="0.15" max="1" step="0.01" value="1"><span class="val" id="opav">1.00</span></div>
+    <div class="row"><label>高光锐度</label><input type="range" id="shine" min="4" max="160" step="1" value="60"><span class="val" id="shinev">60</span></div>
+    <div class="row"><label>主光方位</label><input type="range" id="lightA" min="0" max="360" step="1" value="35"><span class="val" id="lightAv">35°</span></div>
+    <div class="row"><label>环境光</label><input type="range" id="amb" min="0" max="0.7" step="0.01" value="0.30"><span class="val" id="ambv">0.30</span></div>
+  </section>
+
+  <section class="module">
+    <div class="mhead"><span class="num">04</span><h2>剖切 · 视图</h2></div>
+    <div class="row"><label class="chk"><input type="checkbox" id="clipOn"> 剖切面</label>
+      <select id="clipAxis" style="flex:1"><option value="0">X 轴</option><option value="1">Y 轴</option><option value="2">Z 轴</option></select></div>
+    <div class="row"><label>剖切位置</label><input type="range" id="clipPos" min="-0.55" max="0.55" step="0.005" value="0.55"><span class="val" id="clipPosv">0.55</span></div>
+    <div class="grid2" style="margin-top:8px">
+      <label class="chk"><input type="checkbox" id="rot" checked> 自动旋转</label>
+      <label class="chk"><input type="checkbox" id="box" checked> 包围盒</label>
+    </div>
+    <div class="grid2" style="margin-top:8px">
+      <button id="reset">重置视角</button><button id="shot">保存快照</button>
+    </div>
+  </section>
+
+  <div class="foot">
+    <div><span class="k">拖拽</span>轨道旋转 &nbsp; <span class="k">滚轮</span>缩放 &nbsp; <span class="k">Shift拖</span>/<span class="k">右键</span>平移</div>
+    <div><span class="k">双击</span>重置 &nbsp; <span class="k">空格</span>自转 &nbsp; <span class="k">C</span>剖切 &nbsp; <span class="k">←→</span>阈值</div>
+    <div style="margin-top:10px">提取算法：GPU 端经典 Marching Cubes（256 判例查表 + 边插值）。</div>
+  </div>
+</aside>
+
+<div id="hud">
+  <div class="hudtitle">实时读数</div>
+  <table>
+    <tr><td>帧率</td><td><b id="sFps">—</b></td></tr>
+    <tr><td>三角面</td><td><b id="sTri">—</b></td></tr>
+    <tr><td>体素</td><td><b id="sVox">—</b></td></tr>
+    <tr><td>提取耗时</td><td><b id="sMs">—</b></td></tr>
+    <tr><td>顶点上限</td><td><b id="sCap">—</b></td></tr>
+    <tr><td>渲染尺寸</td><td><b id="sRes">—</b></td></tr>
+  </table>
+</div>
+
+<div id="hints">
+  <span><b>拖拽</b>旋转</span><span><b>滚轮</b>缩放</span><span><b>Shift+拖</b>平移</span>
+</div>
+
+<div id="diag"></div>
+
+<div id="overlay">
+  <div class="mark">SOL<em>I</em>DUS</div>
+  <div class="ring" id="spin"></div>
+  <div id="ovtxt">正在初始化 WebGPU 设备…</div>
+  <div id="fail"></div>
+</div>
+
+<script>
+(() => {
+"use strict";
+/* ═══════════════ 工具 · 矩阵 ═══════════════ */
+const $ = id => document.getElementById(id);
+const smoothstep = (a,b,x)=>{ const t=Math.min(1,Math.max(0,(x-a)/(b-a))); return t*t*(3-2*t); };
+const M4 = {
+  ident: () => new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]),
+  persp(fovy, asp, near, far){
+    const f = 1/Math.tan(fovy/2), nf = 1/(near-far);
+    return new Float32Array([f/asp,0,0,0, 0,f,0,0, 0,0,far*nf,-1, 0,0,far*near*nf,0]);
+  },
+  lookAt(eye, ctr, up){
+    let zx=eye[0]-ctr[0], zy=eye[1]-ctr[1], zz=eye[2]-ctr[2];
+    let l=Math.hypot(zx,zy,zz)||1; zx/=l; zy/=l; zz/=l;
+    let xx=up[1]*zz-up[2]*zy, xy=up[2]*zx-up[0]*zz, xz=up[0]*zy-up[1]*zx;
+    l=Math.hypot(xx,xy,xz)||1; xx/=l; xy/=l; xz/=l;
+    const yx=zy*xz-zz*xy, yy=zz*xx-zx*xz, yz=zx*xy-zy*xx;
+    return new Float32Array([
+      xx,yx,zx,0, xy,yy,zy,0, xz,yz,zz,0,
+      -(xx*eye[0]+xy*eye[1]+xz*eye[2]),
+      -(yx*eye[0]+yy*eye[1]+yz*eye[2]),
+      -(zx*eye[0]+zy*eye[1]+zz*eye[2]), 1]);
+  },
+  mul(a,b){
+    const o = new Float32Array(16);
+    for(let c=0;c<4;c++) for(let r=0;r<4;r++){
+      let s=0; for(let k=0;k<4;k++) s += a[k*4+r]*b[c*4+k];
+      o[c*4+r]=s;
+    }
+    return o;
+  }
+};
+
+/* ═══════════════ 经典 Marching Cubes 三角表（256 判例 × 16 边序） ═══════════════ */
+const TRI_ROWS = [
+"",
+"0 8 3",
+"0 1 9",
+"1 8 3 9 8 1",
+"1 2 10",
+"0 8 3 1 2 10",
+"9 2 10 0 2 9",
+"2 8 3 2 10 8 10 9 8",
+"3 11 2",
+"0 11 2 8 11 0",
+"1 9 0 2 3 11",
+"1 11 2 1 9 11 9 8 11",
+"3 10 1 11 10 3",
+"0 10 1 0 8 10 8 11 10",
+"3 9 0 3 11 9 11 10 9",
+"9 8 10 10 8 11",
+"4 7 8",
+"4 3 0 7 3 4",
+"0 1 9 8 4 7",
+"4 1 9 4 7 1 7 3 1",
+"1 2 10 8 4 7",
+"3 4 7 3 0 4 1 2 10",
+"9 2 10 9 0 2 8 4 7",
+"2 10 9 2 9 7 2 7 3 7 9 4",
+"8 4 7 3 11 2",
+"11 4 7 11 2 4 2 0 4",
+"9 0 1 8 4 7 2 3 11",
+"4 7 11 9 4 11 9 11 2 9 2 1",
+"3 10 1 3 11 10 7 8 4",
+"1 11 10 1 4 11 1 0 4 7 11 4",
+"4 7 8 9 0 11 9 11 10 11 0 3",
+"4 7 11 4 11 9 9 11 10",
+"9 5 4",
+"9 5 4 0 8 3",
+"0 5 4 1 5 0",
+"8 5 4 8 3 5 3 1 5",
+"1 2 10 9 5 4",
+"3 0 8 1 2 10 4 9 5",
+"5 2 10 5 4 2 4 0 2",
+"2 10 5 3 2 5 3 5 4 3 4 8",
+"9 5 4 2 3 11",
+"0 11 2 0 8 11 4 9 5",
+"0 5 4 0 1 5 2 3 11",
+"2 1 5 2 5 8 2 8 11 4 8 5",
+"10 3 11 10 1 3 9 5 4",
+"4 9 5 0 8 1 8 10 1 8 11 10",
+"5 4 0 5 0 11 5 11 10 11 0 3",
+"5 4 8 5 8 10 10 8 11",
+"9 7 8 5 7 9",
+"9 3 0 9 5 3 5 7 3",
+"0 7 8 0 1 7 1 5 7",
+"1 5 3 3 5 7",
+"9 7 8 9 5 7 10 1 2",
+"10 1 2 9 5 0 5 3 0 5 7 3",
+"8 0 2 8 2 5 8 5 7 10 5 2",
+"2 10 5 2 5 3 3 5 7",
+"7 9 5 7 8 9 3 11 2",
+"9 5 7 9 7 2 9 2 0 2 7 11",
+"2 3 11 0 1 8 1 7 8 1 5 7",
+"11 2 1 11 1 7 7 1 5",
+"9 5 8 8 5 7 10 1 3 10 3 11",
+"5 7 0 5 0 9 7 11 0 1 0 10 11 10 0",
+"11 10 0 11 0 3 10 5 0 8 0 7 5 7 0",
+"11 10 5 7 11 5",
+"10 6 5",
+"0 8 3 5 10 6",
+"9 0 1 5 10 6",
+"1 8 3 1 9 8 5 10 6",
+"1 6 5 2 6 1",
+"1 6 5 1 2 6 3 0 8",
+"9 6 5 9 0 6 0 2 6",
+"5 9 8 5 8 2 5 2 6 3 2 8",
+"2 3 11 10 6 5",
+"11 0 8 11 2 0 10 6 5",
+"0 1 9 2 3 11 5 10 6",
+"5 10 6 1 9 2 9 11 2 9 8 11",
+"6 3 11 6 5 3 5 1 3",
+"0 8 11 0 11 5 0 5 1 5 11 6",
+"3 11 6 0 3 6 0 6 5 0 5 9",
+"6 5 9 6 9 11 11 9 8",
+"5 10 6 4 7 8",
+"4 3 0 4 7 3 6 5 10",
+"1 9 0 5 10 6 8 4 7",
+"10 6 5 1 9 7 1 7 3 7 9 4",
+"6 1 2 6 5 1 4 7 8",
+"1 2 5 5 2 6 3 0 4 3 4 7",
+"8 4 7 9 0 5 0 6 5 0 2 6",
+"7 3 9 7 9 4 3 2 9 5 9 6 2 6 9",
+"3 11 2 7 8 4 10 6 5",
+"5 10 6 4 7 2 4 2 0 2 7 11",
+"0 1 9 4 7 8 2 3 11 5 10 6",
+"9 2 1 9 11 2 9 4 11 7 11 4 5 10 6",
+"8 4 7 3 11 5 3 5 1 5 11 6",
+"5 1 11 5 11 6 1 0 11 7 11 4 0 4 11",
+"0 5 9 0 6 5 0 3 6 11 6 3 8 4 7",
+"6 5 9 6 9 11 4 7 9 7 11 9",
+"10 4 9 6 4 10",
+"4 10 6 4 9 10 0 8 3",
+"10 0 1 10 6 0 6 4 0",
+"8 3 1 8 1 6 8 6 4 6 1 10",
+"1 4 9 1 2 4 2 6 4",
+"3 0 8 1 2 9 2 4 9 2 6 4",
+"0 2 4 4 2 6",
+"8 3 2 8 2 4 4 2 6",
+"10 4 9 10 6 4 11 2 3",
+"0 8 2 2 8 11 4 9 10 4 10 6",
+"3 11 2 0 1 6 0 6 4 6 1 10",
+"6 4 1 6 1 10 4 8 1 2 1 11 8 11 1",
+"9 6 4 9 3 6 9 1 3 11 6 3",
+"8 11 1 8 1 0 11 6 1 9 1 4 6 4 1",
+"3 11 6 3 6 0 0 6 4",
+"6 4 8 11 6 8",
+"7 10 6 7 8 10 8 9 10",
+"0 7 3 0 10 7 0 9 10 6 7 10",
+"10 6 7 1 10 7 1 7 8 1 8 0",
+"10 6 7 10 7 1 1 7 3",
+"1 2 6 1 6 8 1 8 9 8 6 7",
+"2 6 9 2 9 1 6 7 9 0 9 3 7 3 9",
+"7 8 0 7 0 6 6 0 2",
+"7 3 2 6 7 2",
+"2 3 11 10 6 8 10 8 9 8 6 7",
+"2 0 7 2 7 11 0 9 7 6 7 10 9 10 7",
+"1 8 0 1 7 8 1 10 7 6 7 10 2 3 11",
+"11 2 1 11 1 7 10 6 1 6 7 1",
+"8 9 6 8 6 7 9 1 6 11 6 3 1 3 6",
+"0 9 1 11 6 7",
+"7 8 0 7 0 6 3 11 0 11 6 0",
+"7 11 6"
+];
+const TRI_TABLE = new Uint32Array(256*16).fill(255);
+for(let i=0;i<128;i++){
+  const r=TRI_ROWS[i]; if(!r) continue;
+  const a=r.split(' ').map(Number);
+  for(let j=0;j<a.length;j++) TRI_TABLE[i*16+j]=a[j];
+  const c=255-i; // complement case: same surface, reversed winding
+  for(let j=0;j<a.length;j+=3){ TRI_TABLE[c*16+j]=a[j+2]; TRI_TABLE[c*16+j+1]=a[j+1]; TRI_TABLE[c*16+j+2]=a[j]; }
+}
+
+/* ═══════════════ WGSL · GPU Marching Cubes 提取 ═══════════════ */
+const MC_WGSL = /* wgsl */`
+struct MCU {
+  dims : vec4<u32>,        // nx, ny, nz, smoothNormals
+  iso  : f32,
+  maxVerts : u32,
+  _pad : u32,
+  scale : vec4<f32>,
+};
+struct Vtx { px:f32, py:f32, pz:f32, nx:f32, ny:f32, nz:f32 };
+struct Args { vertexCount: atomic<u32>, instanceCount: u32, firstVertex: u32, firstInstance: u32 };
+
+@group(0) @binding(0) var<uniform> u : MCU;
+@group(0) @binding(1) var vol : texture_3d<f32>;
+@group(0) @binding(2) var<storage, read_write> verts : array<Vtx>;
+@group(0) @binding(3) var<storage, read_write> args : Args;
+@group(0) @binding(4) var<storage, read> triTable : array<u32>;
+
+const CORNERS = array<vec3<i32>,8>(
+  vec3<i32>(0,0,0), vec3<i32>(1,0,0), vec3<i32>(1,1,0), vec3<i32>(0,1,0),
+  vec3<i32>(0,0,1), vec3<i32>(1,0,1), vec3<i32>(1,1,1), vec3<i32>(0,1,1));
+const EDGE_PAIRS = array<vec2<u32>,12>(
+  vec2<u32>(0,1), vec2<u32>(1,2), vec2<u32>(2,3), vec2<u32>(3,0),
+  vec2<u32>(4,5), vec2<u32>(5,6), vec2<u32>(6,7), vec2<u32>(7,4),
+  vec2<u32>(0,4), vec2<u32>(1,5), vec2<u32>(2,6), vec2<u32>(3,7));
+
+fn sampleV(p: vec3<i32>) -> f32 {
+  let d = vec3<i32>(i32(u.dims.x), i32(u.dims.y), i32(u.dims.z)) - vec3<i32>(1);
+  return textureLoad(vol, clamp(p, vec3<i32>(0), d), 0).r;
+}
+fn gradAt(p: vec3<i32>) -> vec3<f32> {
+  return vec3<f32>(
+    sampleV(p + vec3<i32>(1,0,0)) - sampleV(p - vec3<i32>(1,0,0)),
+    sampleV(p + vec3<i32>(0,1,0)) - sampleV(p - vec3<i32>(0,1,0)),
+    sampleV(p + vec3<i32>(0,0,1)) - sampleV(p - vec3<i32>(0,0,1)));
+}
+fn toWorld(v: vec3<f32>) -> vec3<f32> {
+  let n = v / max(vec3<f32>(u.dims.xyz) - vec3<f32>(1.0), vec3<f32>(1.0)) - vec3<f32>(0.5);
+  return n * u.scale.xyz;
+}
+fn putVert(i: u32, p: vec3<f32>, n: vec3<f32>) {
+  verts[i].px = p.x; verts[i].py = p.y; verts[i].pz = p.z;
+  verts[i].nx = n.x; verts[i].ny = n.y; verts[i].nz = n.z;
+}
+fn emitTri(a: vec3<f32>, b: vec3<f32>, c: vec3<f32>, na: vec3<f32>, nb: vec3<f32>, nc: vec3<f32>) {
+  let base = atomicAdd(&args.vertexCount, 3u);
+  if (base + 3u <= u.maxVerts) {
+    var fa = na; var fb = nb; var fc = nc;
+    if (u.dims.w == 0u) {
+      let faceN = normalize(cross(b - a, c - a) + vec3<f32>(1e-8));
+      fa = faceN; fb = faceN; fc = faceN;
+    }
+    putVert(base,      a, fa);
+    putVert(base + 1u, b, fb);
+    putVert(base + 2u, c, fc);
+  }
+}
+
+@compute @workgroup_size(4,4,4)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let d = u.dims.xyz;
+  if (gid.x + 1u >= d.x || gid.y + 1u >= d.y || gid.z + 1u >= d.z) { return; }
+  let b = vec3<i32>(gid);
+
+  var cv : array<f32,8>;
+  var mask = 0u;
+  for (var i = 0u; i < 8u; i = i + 1u) {
+    cv[i] = sampleV(b + CORNERS[i]);
+    if (cv[i] >= u.iso) { mask = mask | (1u << i); }
+  }
+  if (mask == 0u || mask == 255u) { return; }
+
+  var cw : array<vec3<f32>,8>;
+  var cn : array<vec3<f32>,8>;
+  for (var i = 0u; i < 8u; i = i + 1u) {
+    cw[i] = toWorld(vec3<f32>(b + CORNERS[i]));
+    cn[i] = -normalize(gradAt(b + CORNERS[i]) + vec3<f32>(1e-8));
+  }
+
+  var ep : array<vec3<f32>,12>;
+  var en : array<vec3<f32>,12>;
+  for (var e = 0u; e < 12u; e = e + 1u) {
+    let a = EDGE_PAIRS[e].x;
+    let c = EDGE_PAIRS[e].y;
+    var t = 0.5;
+    let dv = cv[c] - cv[a];
+    if (abs(dv) > 1e-9) { t = clamp((u.iso - cv[a]) / dv, 0.0, 1.0); }
+    ep[e] = mix(cw[a], cw[c], t);
+    en[e] = normalize(mix(cn[a], cn[c], t) + vec3<f32>(1e-8));
+  }
+
+  for (var k = 0u; k < 16u; k = k + 3u) {
+    let e0 = triTable[mask * 16u + k];
+    if (e0 == 255u) { break; }
+    let e1 = triTable[mask * 16u + k + 1u];
+    let e2 = triTable[mask * 16u + k + 2u];
+    emitTri(ep[e0], ep[e1], ep[e2], en[e0], en[e1], en[e2]);
+  }
+}
+
+@compute @workgroup_size(1)
+fn clampCount() {
+  atomicMin(&args.vertexCount, u.maxVerts);
+}
+`;
+
+/* ═══════════════ WGSL · 着色 ═══════════════ */
+const RENDER_WGSL = /* wgsl */`
+struct RU {
+  viewProj : mat4x4<f32>,
+  camPos   : vec4<f32>,
+  light    : vec4<f32>,   // dir.xyz, key intensity
+  base     : vec4<f32>,   // rgb, opacity
+  params   : vec4<f32>,   // shininess, ambient, colormap, clipOn
+  clip     : vec4<f32>,   // normal.xyz, offset
+};
+@group(0) @binding(0) var<uniform> u : RU;
+
+struct VOut {
+  @builtin(position) pos : vec4<f32>,
+  @location(0) wp : vec3<f32>,
+  @location(1) nn : vec3<f32>,
+};
+
+@vertex fn vsMesh(@location(0) p: vec3<f32>, @location(1) n: vec3<f32>) -> VOut {
+  var o : VOut;
+  o.pos = u.viewProj * vec4<f32>(p, 1.0);
+  o.wp = p; o.nn = n;
+  return o;
+}
+
+fn thermal(t: f32) -> vec3<f32> {
+  let x = clamp(t, 0.0, 1.0);
+  let c0 = vec3<f32>(0.20,0.25,0.66);
+  let c1 = vec3<f32>(0.08,0.62,0.80);
+  let c2 = vec3<f32>(0.30,0.75,0.35);
+  let c3 = vec3<f32>(0.95,0.80,0.20);
+  let c4 = vec3<f32>(0.72,0.18,0.12);
+  if (x < 0.25) { return mix(c0, c1, x / 0.25); }
+  if (x < 0.5)  { return mix(c1, c2, (x - 0.25) / 0.25); }
+  if (x < 0.75) { return mix(c2, c3, (x - 0.5) / 0.25); }
+  return mix(c3, c4, (x - 0.75) / 0.25);
+}
+
+@fragment fn fsMesh(i: VOut) -> @location(0) vec4<f32> {
+  if (u.params.w > 0.5 && dot(u.clip.xyz, i.wp) > u.clip.w) { discard; }
+  let V = normalize(u.camPos.xyz - i.wp);
+  var N = normalize(i.nn);
+  let inner = dot(N, V) < 0.0;
+  if (inner) { N = -N; }
+
+  var albedo = u.base.rgb;
+  if (u.params.z > 0.5) {
+    albedo = thermal(clamp(i.wp.y * 0.5 + 0.5, 0.0, 1.0));
+  }
+  if (inner) { albedo = mix(albedo, vec3<f32>(0.62,0.24,0.16), 0.5); }
+
+  let L1 = normalize(u.light.xyz);
+  let L2 = normalize(vec3<f32>(-L1.x, 0.30, -L1.z));
+  let H1 = normalize(L1 + V);
+  let sh = u.params.x;
+
+  let sky = vec3<f32>(0.98,0.95,0.88);
+  let gnd = vec3<f32>(0.52,0.45,0.37);
+  var col = albedo * (mix(gnd, sky, N.y * 0.5 + 0.5) * (0.42 + u.params.y));
+  col = col + albedo * max(dot(N, L1), 0.0) * u.light.w * vec3<f32>(1.0,0.94,0.82);
+  col = col + albedo * max(dot(N, L2), 0.0) * 0.30 * vec3<f32>(0.55,0.72,0.92);
+  col = col + pow(max(dot(N, H1), 0.0), sh) * (sh / 48.0 + 0.35) * 0.5 * vec3<f32>(1.0,0.97,0.90);
+  let rim = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+  col = col + rim * vec3<f32>(0.46,0.33,0.16) * 0.55;
+
+  col = col * (1.0 + col * 0.25) / (1.0 + col);
+  let a = u.base.a;
+  return vec4<f32>(col * a, a);
+}
+
+@vertex fn vsLine(@location(0) p: vec3<f32>) -> @builtin(position) vec4<f32> {
+  return u.viewProj * vec4<f32>(p, 1.0);
+}
+@fragment fn fsLine() -> @location(0) vec4<f32> {
+  let a = 0.55;
+  return vec4<f32>(vec3<f32>(0.28,0.25,0.20) * a, a);
+}
+`;
+
+/* ═══════════════ 体数据生成 ═══════════════ */
+function hash3(i,j,k){
+  let n = (Math.imul(i,374761393) ^ Math.imul(j,668265263) ^ Math.imul(k,1274126177)) | 0;
+  n = Math.imul(n ^ (n>>>13), 1274126177);
+  n = (n ^ (n>>>16)) >>> 0;
+  return n / 4294967295;
+}
+function vnoise(x,y,z){
+  const xi=Math.floor(x), yi=Math.floor(y), zi=Math.floor(z);
+  const fx=x-xi, fy=y-yi, fz=z-zi;
+  const u=fx*fx*(3-2*fx), v=fy*fy*(3-2*fy), w=fz*fz*(3-2*fz);
+  const c=(a,b,d)=>hash3(xi+a, yi+b, zi+d);
+  const x00=c(0,0,0)+(c(1,0,0)-c(0,0,0))*u, x10=c(0,1,0)+(c(1,1,0)-c(0,1,0))*u;
+  const x01=c(0,0,1)+(c(1,0,1)-c(0,0,1))*u, x11=c(0,1,1)+(c(1,1,1)-c(0,1,1))*u;
+  const y0=x00+(x10-x00)*v, y1=x01+(x11-x01)*v;
+  return y0+(y1-y0)*w;
+}
+function fbm(x,y,z,oct=4){
+  let s=0,a=0.5,f=1;
+  for(let i=0;i<oct;i++){ s+=a*vnoise(x*f,y*f,z*f); f*=2.03; a*=0.5; }
+  return s;
+}
+
+function genVolume(kind, N){
+  const nx=N, ny=N, nz=N, data=new Float32Array(nx*ny*nz);
+  const S=2/(N-1);
+  for(let z=0;z<nz;z++){
+    const pz=z*S-1;
+    for(let y=0;y<ny;y++){
+      const py=y*S-1;
+      for(let x=0;x<nx;x++){
+        const px=x*S-1, idx=x+nx*(y+ny*z);
+        let v=0;
+        if(kind==='gyroid'){
+          const k=2.6*Math.PI;
+          const g=Math.sin(px*k)*Math.cos(py*k)+Math.sin(py*k)*Math.cos(pz*k)+Math.sin(pz*k)*Math.cos(px*k);
+          const r=Math.hypot(px,py,pz);
+          const ball=smoothstep(1.0,0.72,r);
+          v=g*ball-0.4*(1-ball);
+        } else if(kind==='asteroid'){
+          const r=Math.hypot(px,py*0.9,pz);
+          v=fbm(px*3+5,py*3,pz*3+11,5) - smoothstep(0.48,0.85,r)*0.9;
+        } else if(kind==='orbital'){
+          const r=Math.hypot(px,py,pz);
+          const rad=Math.exp(-2.4*r);
+          const dz2=2*pz*pz-px*px-py*py;
+          const dxy=1.5*px*py;
+          v=(dz2+0.5*dxy)*rad + 0.02*fbm(px*6,py*6,pz*6,2);
+        } else if(kind==='bone'){
+          const r=Math.hypot(px,py,pz);
+          const network=fbm(px*4,py*4,pz*4,4);
+          const cortex=smoothstep(0.58,0.72,r);
+          const shell=0.85+0.08*fbm(px*2.5,py*2.5,pz*2.5,3);
+          v=network*(1-cortex)+shell*cortex;
+        } else { // gear
+          const r=Math.hypot(px,py);
+          const th=Math.atan2(py,px);
+          const tooth=0.085*Math.cos(8*th);
+          const boundary=r-(0.66+tooth);
+          const solid=1-smoothstep(-0.015,0.05,boundary);
+          const hole=smoothstep(0.0,0.10,r-0.17);
+          const thick=1-smoothstep(0.15,0.21,Math.abs(pz));
+          v=solid*hole*thick;
+        }
+        data[idx]=v;
+      }
+    }
+  }
+  return normalizeVol({data,nx,ny,nz});
+}
+function normalizeVol(vol){
+  const d=vol.data; let mn=Infinity, mx=-Infinity;
+  for(let i=0;i<d.length;i++){ const v=d[i]; if(v<mn)mn=v; if(v>mx)mx=v; }
+  const s = mx>mn ? 1/(mx-mn) : 1;
+  for(let i=0;i<d.length;i++) d[i]=(d[i]-mn)*s;
+  return vol;
+}
+function downsample(vol){
+  const {data,nx,ny,nz}=vol;
+  const ax=Math.max(2,nx>>1), ay=Math.max(2,ny>>1), az=Math.max(2,nz>>1);
+  const out=new Float32Array(ax*ay*az);
+  for(let z=0;z<az;z++)for(let y=0;y<ay;y++)for(let x=0;x<ax;x++){
+    let s=0,c=0;
+    for(let k=0;k<2;k++)for(let j=0;j<2;j++)for(let i=0;i<2;i++){
+      const X=Math.min(nx-1,x*2+i), Y=Math.min(ny-1,y*2+j), Z=Math.min(nz-1,z*2+k);
+      s+=data[X+nx*(Y+ny*Z)]; c++;
+    }
+    out[x+ax*(y+ay*z)]=s/c;
+  }
+  return {data:out,nx:ax,ny:ay,nz:az};
+}
+
+/* ═══════════════ 状态 ═══════════════ */
+const canvas=$('gfx'), overlay=$('overlay'), ovtxt=$('ovtxt');
+let device, ctx, format, msaa=null, depth=null, sampleCount=4;
+let mcPipe, clampPipe, meshPipeOpaque, meshPipeBlend, linePipe, mcBGL, rBGL, mcBG, rBG;
+let mcUB, rUB, vbuf, argsBuf, readBuf, volTex, triBuf, lineBuf;
+let maxVerts=0, vol=null, scale=[1,1,1], gridDisp=[1,1,1];
+let readBusy=false, needExtract=true, extractMs=0, triCount=0;
+const cam={theta:0.72, phi:1.18, dist:2.5, target:[0,0,0], autoRot:true};
+const st={fps:0};
+const CFG={iso:0.5, smooth:1, color:[0.753,0.506,0.388], opacity:1, cmap:0,
+  shine:60, lightA:35, amb:0.30, clipOn:0, clipAxis:0, clipPos:0.55, showBox:true};
+
+function fail(msg){
+  $('spin').style.display='none'; ovtxt.style.display='none';
+  const f=$('fail'); f.style.display='block'; f.innerHTML=msg;
+  overlay.classList.remove('hide');
+}
+
+/* ═══════════════ 初始化 ═══════════════ */
+async function init(){
+  if(!navigator.gpu){
+    fail('<b>此浏览器不支持 WebGPU</b><br>请使用 Chrome / Edge 113+ 或 Safari 18+，并确保未禁用 <code>WebGPU</code>。');
+    return;
+  }
+  const adapter = await navigator.gpu.requestAdapter({powerPreference:'high-performance'});
+  if(!adapter){ fail('<b>无法获取 GPU 适配器</b><br>请检查显卡驱动或浏览器硬件加速设置。'); return; }
+  device = await adapter.requestDevice();
+  let firstErr=null;
+  device.addEventListener('uncapturederror', e=>{
+    console.error('WebGPU error:', e.error.message);
+    if(!firstErr) firstErr=e.error.message; // 保留第一条（根因），忽略后续“previous error”噪音
+    const d=$('diag'); if(d){ d.style.display='block'; d.textContent='WebGPU 错误：'+firstErr; }
+  });
+  try{
+    const info = adapter.info || (adapter.requestAdapterInfo ? await adapter.requestAdapterInfo() : null);
+    if(info) $('gpuname').textContent = (info.vendor||'GPU') + (info.architecture ? ' · '+info.architecture : '');
+  }catch(e){}
+
+  ctx = canvas.getContext('webgpu');
+  format = navigator.gpu.getPreferredCanvasFormat();
+  ctx.configure({device, format, alphaMode:'opaque'});
+
+  const lim = device.limits;
+  maxVerts = Math.min(3_000_001, Math.floor(Math.min(lim.maxStorageBufferBindingSize, lim.maxBufferSize)/24));
+  maxVerts = Math.floor(maxVerts/3)*3;
+  $('sCap').textContent = (maxVerts/1e6).toFixed(1)+'M';
+
+  const mcMod = device.createShaderModule({code:MC_WGSL});
+  const rMod  = device.createShaderModule({code:RENDER_WGSL});
+
+  mcBGL = device.createBindGroupLayout({entries:[
+    {binding:0, visibility:GPUShaderStage.COMPUTE, buffer:{type:'uniform'}},
+    {binding:1, visibility:GPUShaderStage.COMPUTE, texture:{sampleType:'unfilterable-float', viewDimension:'3d'}},
+    {binding:2, visibility:GPUShaderStage.COMPUTE, buffer:{type:'storage', minBindingSize:maxVerts*24}},
+    {binding:3, visibility:GPUShaderStage.COMPUTE, buffer:{type:'storage', minBindingSize:16}},
+    {binding:4, visibility:GPUShaderStage.COMPUTE, buffer:{type:'read-only-storage', minBindingSize:TRI_TABLE.byteLength}},
+  ]});
+  const mcPL = device.createPipelineLayout({bindGroupLayouts:[mcBGL]});
+  mcPipe    = device.createComputePipeline({layout:mcPL, compute:{module:mcMod, entryPoint:'main'}});
+  clampPipe = device.createComputePipeline({layout:mcPL, compute:{module:mcMod, entryPoint:'clampCount'}});
+
+  rBGL = device.createBindGroupLayout({entries:[
+    {binding:0, visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT, buffer:{type:'uniform'}}]});
+  const rPL = device.createPipelineLayout({bindGroupLayouts:[rBGL]});
+
+  const meshVB = [{arrayStride:24, attributes:[
+      {shaderLocation:0, offset:0,  format:'float32x3'},
+      {shaderLocation:1, offset:12, format:'float32x3'}]}];
+  const ds={format:'depth24plus', depthWriteEnabled:true, depthCompare:'less'};
+  const blend={color:{srcFactor:'one',dstFactor:'one-minus-src-alpha'},alpha:{srcFactor:'one',dstFactor:'one-minus-src-alpha'}};
+
+  meshPipeOpaque = device.createRenderPipeline({layout:rPL,
+    vertex:{module:rMod, entryPoint:'vsMesh', buffers:meshVB},
+    fragment:{module:rMod, entryPoint:'fsMesh', targets:[{format, blend}]},
+    primitive:{topology:'triangle-list', cullMode:'none'},
+    depthStencil:ds, multisample:{count:sampleCount}});
+  meshPipeBlend = device.createRenderPipeline({layout:rPL,
+    vertex:{module:rMod, entryPoint:'vsMesh', buffers:meshVB},
+    fragment:{module:rMod, entryPoint:'fsMesh', targets:[{format, blend}]},
+    primitive:{topology:'triangle-list', cullMode:'none'},
+    depthStencil:{format:'depth24plus', depthWriteEnabled:false, depthCompare:'less'},
+    multisample:{count:sampleCount}});
+  linePipe = device.createRenderPipeline({layout:rPL,
+    vertex:{module:rMod, entryPoint:'vsLine', buffers:[{arrayStride:12, attributes:[{shaderLocation:0,offset:0,format:'float32x3'}]}]},
+    fragment:{module:rMod, entryPoint:'fsLine', targets:[{format, blend}]},
+    primitive:{topology:'line-list'},
+    depthStencil:{format:'depth24plus', depthWriteEnabled:false, depthCompare:'less'},
+    multisample:{count:sampleCount}});
+
+  mcUB   = device.createBuffer({size:64, usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
+  rUB    = device.createBuffer({size:160, usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
+  vbuf   = device.createBuffer({size:maxVerts*24, usage:GPUBufferUsage.VERTEX|GPUBufferUsage.STORAGE});
+  argsBuf= device.createBuffer({size:16, usage:GPUBufferUsage.INDIRECT|GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_SRC|GPUBufferUsage.COPY_DST});
+  readBuf= device.createBuffer({size:16, usage:GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST});
+  triBuf = device.createBuffer({size:TRI_TABLE.byteLength, usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST});
+  device.queue.writeBuffer(triBuf,0,TRI_TABLE);
+  rBG    = device.createBindGroup({layout:rBGL, entries:[{binding:0, resource:{buffer:rUB}}]});
+
+  resize();
+  new ResizeObserver(resize).observe(document.body);
+  bindUI();
+  await setVolume(genVolume('gyroid', 128));
+  overlay.classList.add('hide');
+  requestAnimationFrame(loop);
+}
+
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio||1, 2);
+  const w = Math.max(1, Math.floor(canvas.clientWidth*dpr)), h = Math.max(1, Math.floor(canvas.clientHeight*dpr));
+  if(canvas.width===w && canvas.height===h && msaa) return;
+  canvas.width=w; canvas.height=h;
+  if(msaa) msaa.destroy(); if(depth) depth.destroy();
+  msaa = device.createTexture({size:[w,h], sampleCount, format, usage:GPUTextureUsage.RENDER_ATTACHMENT});
+  depth= device.createTexture({size:[w,h], sampleCount, format:'depth24plus', usage:GPUTextureUsage.RENDER_ATTACHMENT});
+  $('sRes').textContent = w+'×'+h;
+}
+
+async function setVolume(v){
+  overlay.classList.remove('hide');
+  ovtxt.textContent='正在上传体数据到 GPU…';
+  await new Promise(r=>setTimeout(r,16));
+  let g = v;
+  while(g.nx*g.ny*g.nz > 268435456/4 || Math.max(g.nx,g.ny,g.nz) > 1024) g = downsample(g);
+  if(g.nx<2||g.ny<2||g.nz<2){ overlay.classList.add('hide'); alert('体数据维度过小'); return; }
+  vol=g;
+  if(volTex) volTex.destroy();
+  volTex = device.createTexture({size:[vol.nx,vol.ny,vol.nz], dimension:'3d', format:'r32float',
+    usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST});
+  device.queue.writeTexture({texture:volTex}, vol.data,
+    {bytesPerRow:vol.nx*4, rowsPerImage:vol.ny}, [vol.nx,vol.ny,vol.nz]);
+
+  mcBG = device.createBindGroup({layout:mcBGL, entries:[
+    {binding:0, resource:{buffer:mcUB}},
+    {binding:1, resource:volTex.createView()},
+    {binding:2, resource:{buffer:vbuf}},
+    {binding:3, resource:{buffer:argsBuf}},
+    {binding:4, resource:{buffer:triBuf}}]});
+
+  const m = Math.max(vol.nx,vol.ny,vol.nz);
+  scale=[vol.nx/m, vol.ny/m, vol.nz/m];
+  gridDisp=[Math.ceil((vol.nx-1)/4), Math.ceil((vol.ny-1)/4), Math.ceil((vol.nz-1)/4)];
+  buildBox();
+  drawHist();
+  $('dimsTag').textContent = (vol.nx===vol.ny && vol.ny===vol.nz) ? `${vol.nx}³` : `${vol.nx}×${vol.ny}×${vol.nz}`;
+  $('sVox').textContent = (vol.nx*vol.ny*vol.nz/1e6).toFixed(2)+'M';
+  needExtract=true;
+  overlay.classList.add('hide');
+}
+
+function buildBox(){
+  const [hx,hy,hz]=[scale[0]/2,scale[1]/2,scale[2]/2];
+  const c=[[-hx,-hy,-hz],[hx,-hy,-hz],[hx,hy,-hz],[-hx,hy,-hz],[-hx,-hy,hz],[hx,-hy,hz],[hx,hy,hz],[-hx,hy,hz]];
+  const e=[0,1,1,2,2,3,3,0, 4,5,5,6,6,7,7,4, 0,4,1,5,2,6,3,7];
+  const arr=new Float32Array(e.length*3);
+  e.forEach((v,i)=>{ arr[i*3]=c[v][0]; arr[i*3+1]=c[v][1]; arr[i*3+2]=c[v][2]; });
+  if(lineBuf) lineBuf.destroy();
+  lineBuf=device.createBuffer({size:arr.byteLength, usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});
+  device.queue.writeBuffer(lineBuf,0,arr);
+}
+
+function drawHist(){
+  const cv=$('hist'), g=cv.getContext('2d'), W=cv.width, H=cv.height;
+  g.clearRect(0,0,W,H);
+  g.fillStyle='#f5f1e7'; g.fillRect(0,0,W,H);
+  if(!vol) return;
+  const bins=new Float32Array(128), d=vol.data, step=Math.max(1, Math.floor(d.length/400000));
+  for(let i=0;i<d.length;i+=step) bins[Math.min(127,(d[i]*128)|0)]++;
+  let mx=0; for(let i=1;i<128;i++) mx=Math.max(mx, Math.log(1+bins[i]));
+  const grd=g.createLinearGradient(0,H,0,0);
+  grd.addColorStop(0,'rgba(194,58,40,.18)'); grd.addColorStop(1,'rgba(30,106,90,.55)');
+  g.fillStyle=grd; g.beginPath(); g.moveTo(0,H);
+  for(let i=0;i<128;i++){ const v=Math.log(1+bins[i])/(mx||1); g.lineTo(i/127*W, H-v*(H-4)-1); }
+  g.lineTo(W,H); g.closePath(); g.fill();
+  g.strokeStyle='#2a251e'; g.lineWidth=1.4;
+  const x=CFG.iso*W; g.beginPath(); g.moveTo(x,0); g.lineTo(x,H); g.stroke();
+  g.fillStyle='#c23a28'; g.fillRect(x-1.5,0,3,H);
+}
+
+/* 提取 */
+function extract(){
+  const buf=new ArrayBuffer(48), dv=new DataView(buf);
+  dv.setUint32(0, vol.nx, true); dv.setUint32(4, vol.ny, true); dv.setUint32(8, vol.nz, true); dv.setUint32(12, CFG.smooth, true);
+  dv.setFloat32(16, CFG.iso, true); dv.setUint32(20, maxVerts, true);
+  dv.setFloat32(32, scale[0], true); dv.setFloat32(36, scale[1], true); dv.setFloat32(40, scale[2], true);
+  device.queue.writeBuffer(mcUB,0,buf);
+  device.queue.writeBuffer(argsBuf,0,new Uint32Array([0,1,0,0]));
+
+  const enc=device.createCommandEncoder();
+  let p=enc.beginComputePass();
+  p.setPipeline(mcPipe); p.setBindGroup(0,mcBG); p.dispatchWorkgroups(...gridDisp); p.end();
+  p=enc.beginComputePass();
+  p.setPipeline(clampPipe); p.setBindGroup(0,mcBG); p.dispatchWorkgroups(1); p.end();
+  const doRead = !readBusy;
+  if(doRead) enc.copyBufferToBuffer(argsBuf,0,readBuf,0,16);
+  device.queue.submit([enc.finish()]);
+
+  if(doRead){
+    readBusy=true; const t0=performance.now();
+    readBuf.mapAsync(GPUMapMode.READ).then(()=>{
+      const c=new Uint32Array(readBuf.getMappedRange().slice(0))[0];
+      readBuf.unmap(); readBusy=false;
+      triCount=c/3; extractMs=performance.now()-t0;
+      $('sTri').textContent = triCount>1e6 ? (triCount/1e6).toFixed(2)+'M' : Math.round(triCount).toLocaleString();
+      $('sMs').textContent = extractMs.toFixed(1)+' ms';
+      const w=$('warn');
+      if(c>=maxVerts-3){ w.style.display='block'; w.textContent='⚠ 顶点数已达上限，等值面被截断：请提高阈值或降低分辨率。'; }
+      else w.style.display='none';
+      if(c===0){ const d=$('diag'); if(d && d.style.display!=='block'){ d.style.display='block'; d.textContent='等值面为空（0 三角形）：请打开开发者工具(F12)→Console 查看是否有 WebGPU 报错。'; } }
+    }).catch(()=>{readBusy=false;});
+  }
+}
+
+/* 渲染 */
+let last=performance.now(), fpsAcc=0, fpsN=0;
+function loop(t){
+  const dt=Math.min(0.05,(t-last)/1000); last=t;
+  fpsAcc+=dt; fpsN++;
+  if(fpsAcc>0.4){ st.fps=fpsN/fpsAcc; $('sFps').textContent=st.fps.toFixed(0); fpsAcc=0; fpsN=0; }
+  if(cam.autoRot) cam.theta += dt*0.28;
+  if(needExtract){ needExtract=false; extract(); }
+  render();
+  requestAnimationFrame(loop);
+}
+
+function render(){
+  const asp=canvas.width/Math.max(1,canvas.height);
+  const cp=Math.cos(cam.phi), sp=Math.sin(cam.phi);
+  const eye=[cam.target[0]+cam.dist*sp*Math.sin(cam.theta),
+             cam.target[1]+cam.dist*cp,
+             cam.target[2]+cam.dist*sp*Math.cos(cam.theta)];
+  const view=M4.lookAt(eye,cam.target,[0,1,0]);
+  const proj=M4.persp(50*Math.PI/180, asp, 0.01, 40);
+  const vp=M4.mul(proj,view);
+
+  const la=CFG.lightA*Math.PI/180, el=0.62;
+  const lx=Math.sin(la)*Math.cos(el), ly=Math.sin(el), lz=Math.cos(la)*Math.cos(el);
+  const buf=new Float32Array(36);
+  buf.set(vp,0);
+  buf.set([eye[0],eye[1],eye[2],1],16);
+  buf.set([lx,ly,lz,1.25],20);
+  buf.set([CFG.color[0],CFG.color[1],CFG.color[2],CFG.opacity],24);
+  buf.set([CFG.shine, CFG.amb, CFG.cmap, CFG.clipOn],28);
+  const n=[0,0,0]; n[CFG.clipAxis]=1;
+  buf.set([n[0],n[1],n[2], CFG.clipPos*Math.max(...scale)],32);
+  device.queue.writeBuffer(rUB,0,buf);
+
+  const enc=device.createCommandEncoder();
+  const pass=enc.beginRenderPass({
+    colorAttachments:[{view:msaa.createView(), resolveTarget:ctx.getCurrentTexture().createView(),
+      clearValue:{r:0.925, g:0.906, b:0.863, a:1}, loadOp:'clear', storeOp:'store'}],
+    depthStencilAttachment:{view:depth.createView(), depthClearValue:1, depthLoadOp:'clear', depthStoreOp:'store'}
+  });
+  pass.setPipeline(CFG.opacity>0.995 ? meshPipeOpaque : meshPipeBlend);
+  pass.setBindGroup(0,rBG);
+  pass.setVertexBuffer(0,vbuf);
+  pass.drawIndirect(argsBuf,0);
+  if(CFG.showBox && lineBuf){
+    pass.setPipeline(linePipe); pass.setBindGroup(0,rBG);
+    pass.setVertexBuffer(0,lineBuf); pass.draw(24);
+  }
+  pass.end();
+  device.queue.submit([enc.finish()]);
+}
+
+/* ═══════════════ 交互 ═══════════════ */
+function bindUI(){
+  const iso=$('iso');
+  iso.addEventListener('input',()=>{ CFG.iso=+iso.value; $('isov').textContent=CFG.iso.toFixed(3); needExtract=true; drawHist(); });
+  $('smooth').addEventListener('change',e=>{ CFG.smooth=e.target.checked?1:0; needExtract=true; });
+  $('cmap').addEventListener('change',e=>CFG.cmap=e.target.checked?1:0);
+  $('col').addEventListener('input',e=>{ const h=e.target.value; CFG.color=[parseInt(h.substr(1,2),16)/255,parseInt(h.substr(3,2),16)/255,parseInt(h.substr(5,2),16)/255]; });
+  $('opa').addEventListener('input',e=>{ CFG.opacity=+e.target.value; $('opav').textContent=CFG.opacity.toFixed(2); });
+  $('shine').addEventListener('input',e=>{ CFG.shine=+e.target.value; $('shinev').textContent=CFG.shine; });
+  $('lightA').addEventListener('input',e=>{ CFG.lightA=+e.target.value; $('lightAv').textContent=CFG.lightA+'°'; });
+  $('amb').addEventListener('input',e=>{ CFG.amb=+e.target.value; $('ambv').textContent=CFG.amb.toFixed(2); });
+  $('clipOn').addEventListener('change',e=>CFG.clipOn=e.target.checked?1:0);
+  $('clipAxis').addEventListener('change',e=>CFG.clipAxis=+e.target.value);
+  $('clipPos').addEventListener('input',e=>{ CFG.clipPos=+e.target.value; $('clipPosv').textContent=CFG.clipPos.toFixed(2); });
+  $('rot').addEventListener('change',e=>cam.autoRot=e.target.checked);
+  $('box').addEventListener('change',e=>CFG.showBox=e.target.checked);
+  $('reset').addEventListener('click',resetView);
+  $('shot').addEventListener('click',async()=>{
+    render();
+    await device.queue.onSubmittedWorkDone();
+    requestAnimationFrame(()=>{ const a=document.createElement('a'); a.download='solidus.png'; a.href=canvas.toDataURL('image/png'); a.click(); });
+  });
+  $('gen').addEventListener('click',async()=>{
+    overlay.classList.remove('hide'); ovtxt.textContent='正在生成体数据…';
+    await new Promise(r=>setTimeout(r,30));
+    iso.value=0.5; CFG.iso=0.5; $('isov').textContent='0.500';
+    const v=genVolume($('dataset').value, +$('res').value);
+    await setVolume(v);
+  });
+  $('dataset').addEventListener('change',()=>$('gen').click());
+  $('toggle').addEventListener('click',()=>$('panel').classList.toggle('open'));
+
+  $('file').addEventListener('change',e=>{
+    const f=e.target.files[0]; if(!f) return;
+    const m=f.name.match(/(\d+)[x_](\d+)[x_](\d+)/i);
+    if(m){ $('rw').value=+m[1]; $('rh').value=+m[2]; $('rd').value=+m[3]; }
+    else{
+      const bpp={u8:1,u16:2,i16:2,f32:4}[$('dtype').value];
+      const n=Math.round(Math.cbrt(f.size/bpp));
+      if(Math.abs(n*n*n*bpp - f.size)<bpp){ $('rw').value=n; $('rh').value=n; $('rd').value=n; }
+    }
+  });
+  $('loadraw').addEventListener('click', async()=>{
+    const f=$('file').files[0];
+    if(!f){ alert('请先选择一个 .raw 体数据文件'); return; }
+    overlay.classList.remove('hide'); ovtxt.textContent='正在解析 RAW 数据…';
+    await new Promise(r=>setTimeout(r,30));
+    try{
+      const ab=await f.arrayBuffer();
+      const nx=+$('rw').value|0, ny=+$('rh').value|0, nz=+$('rd').value|0, ty=$('dtype').value;
+      const bpp={u8:1,u16:2,i16:2,f32:4}[ty], need=nx*ny*nz*bpp;
+      if(nx<2||ny<2||nz<2) throw new Error('维度必须 ≥ 2');
+      if(ab.byteLength < need) throw new Error(`文件大小 ${ab.byteLength}B 小于所需 ${need}B，请检查维度/数据类型`);
+      const off=ab.byteLength-need;
+      let src;
+      if(ty==='u8') src=new Uint8Array(ab,off,nx*ny*nz);
+      else if(ty==='u16') src=new Uint16Array(ab.slice(off), 0, nx*ny*nz);
+      else if(ty==='i16') src=new Int16Array(ab.slice(off), 0, nx*ny*nz);
+      else src=new Float32Array(ab.slice(off), 0, nx*ny*nz);
+      const data=new Float32Array(nx*ny*nz);
+      for(let i=0;i<data.length;i++) data[i]=src[i];
+      await setVolume(normalizeVol({data,nx,ny,nz}));
+    }catch(err){ overlay.classList.add('hide'); alert('加载失败：'+err.message); }
+  });
+
+  // 直方图点击设阈值
+  $('hist').addEventListener('pointerdown',e=>{
+    const r=$('hist').getBoundingClientRect();
+    const t=Math.min(1,Math.max(0,(e.clientX-r.left)/r.width));
+    iso.value=(0.01+t*0.98).toFixed(3); iso.dispatchEvent(new Event('input'));
+  });
+
+  // 轨道相机
+  let drag=0, lx=0, ly=0;
+  canvas.addEventListener('pointerdown',e=>{
+    drag = (e.button===0 && !e.shiftKey) ? 1 : 2;
+    lx=e.clientX; ly=e.clientY; canvas.setPointerCapture(e.pointerId); canvas.classList.add('drag');
+  });
+  canvas.addEventListener('pointermove',e=>{
+    if(!drag) return;
+    const dx=e.clientX-lx, dy=e.clientY-ly; lx=e.clientX; ly=e.clientY;
+    if(drag===1){
+      cam.theta -= dx*0.0075;
+      cam.phi = Math.max(0.05, Math.min(Math.PI-0.05, cam.phi - dy*0.0075));
+    }else{
+      const s=cam.dist*0.0016;
+      const rx=[Math.cos(cam.theta),0,-Math.sin(cam.theta)];
+      cam.target[0]-=rx[0]*dx*s; cam.target[2]-=rx[2]*dx*s;
+      cam.target[1]+=dy*s;
+    }
+  });
+  const end=e=>{ drag=0; canvas.classList.remove('drag'); };
+  canvas.addEventListener('pointerup',end); canvas.addEventListener('pointercancel',end);
+  canvas.addEventListener('contextmenu',e=>e.preventDefault());
+  canvas.addEventListener('wheel',e=>{ e.preventDefault();
+    cam.dist = Math.max(0.35, Math.min(12, cam.dist*Math.exp(e.deltaY*0.0011)));
+  },{passive:false});
+  canvas.addEventListener('dblclick',resetView);
+  let pinch=0;
+  canvas.addEventListener('touchmove',e=>{
+    if(e.touches.length===2){
+      const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+      if(pinch) cam.dist=Math.max(0.35,Math.min(12,cam.dist*pinch/d));
+      pinch=d; drag=0;
+    }
+  },{passive:true});
+  canvas.addEventListener('touchend',()=>pinch=0);
+
+  addEventListener('keydown',e=>{
+    if(e.code==='Space'){ e.preventDefault(); cam.autoRot=!cam.autoRot; $('rot').checked=cam.autoRot; }
+    if(e.key==='r'||e.key==='R') resetView();
+    if(e.key==='c'||e.key==='C'){ CFG.clipOn=CFG.clipOn?0:1; $('clipOn').checked=!!CFG.clipOn; }
+    if(e.key==='ArrowLeft'||e.key==='ArrowRight'){
+      const s=(e.key==='ArrowLeft'?-1:1)*0.004;
+      iso.value=Math.max(0.01,Math.min(0.99,+iso.value+s)); iso.dispatchEvent(new Event('input'));
+    }
+  });
+}
+function resetView(){ cam.theta=0.72; cam.phi=1.18; cam.dist=2.5; cam.target=[0,0,0]; }
+
+init().catch(err=>{ console.error(err); fail('<b>初始化失败</b><br>'+(err&&err.message?err.message:err)); });
+})();
+</script>
+</body>
+</html>

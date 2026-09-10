@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#000000" />
+<title>GLOW — 发光球体</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --gold: #ffd54a;
+    --gold-dim: rgba(255, 213, 74, 0.55);
+    --gold-faint: rgba(255, 213, 74, 0.24);
+  }
+
+  html, body {
+    height: 100%;
+    background: #000;
+    overflow: hidden;
+  }
+
+  body {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    color: var(--gold);
+    -webkit-font-smoothing: antialiased;
+    touch-action: none;
+    cursor: crosshair;
+  }
+
+  canvas#scene {
+    display: block;
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  #vignette {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 2;
+    background: radial-gradient(ellipse at 50% 50%,
+                rgba(0,0,0,0) 46%,
+                rgba(0,0,0,0.4) 80%,
+                rgba(0,0,0,0.75) 100%);
+  }
+
+  /* 细腻颗粒/扫描线纹理，增加胶片质感 */
+  #grain {
+    position: fixed;
+    inset: -50%;
+    pointer-events: none;
+    z-index: 3;
+    opacity: 0.05;
+    background-image:
+      repeating-linear-gradient(0deg, rgba(255,255,255,0.6) 0 1px, rgba(0,0,0,0) 1px 3px);
+    animation: drift 9s linear infinite;
+  }
+  @keyframes drift { from { transform: translateY(0); } to { transform: translateY(3px); } }
+
+  #brand {
+    position: fixed;
+    top: clamp(16px, 3vh, 34px);
+    left: clamp(16px, 3vw, 38px);
+    z-index: 5;
+    pointer-events: none;
+  }
+  #brand h1 {
+    font-size: clamp(13px, 1.5vw, 17px);
+    font-weight: 600;
+    letter-spacing: .42em;
+    text-transform: uppercase;
+    color: #fff3c4;
+    text-shadow: 0 0 18px rgba(255,200,40,.55);
+  }
+  #brand p {
+    margin-top: 8px;
+    font-size: clamp(9px, 1vw, 11px);
+    letter-spacing: .26em;
+    text-transform: uppercase;
+    color: var(--gold-dim);
+  }
+  #brand .rule {
+    margin-top: 12px;
+    width: 74px; height: 1px;
+    background: linear-gradient(90deg, var(--gold), transparent);
+  }
+
+  #glowRead {
+    position: fixed;
+    top: clamp(16px, 3vh, 34px);
+    right: clamp(16px, 3vw, 38px);
+    z-index: 5;
+    font-size: 10px;
+    letter-spacing: .22em;
+    color: var(--gold-faint);
+    pointer-events: none;
+  }
+
+  #hint {
+    position: fixed;
+    bottom: clamp(18px, 4vh, 30px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 4;
+    font-size: 10px;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    color: var(--gold-faint);
+    pointer-events: none;
+    text-align: center;
+    white-space: nowrap;
+  }
+  #hint span { color: #ffe38a; }
+
+  #toast {
+    position: fixed;
+    bottom: clamp(64px, 10vh, 84px);
+    left: 50%;
+    transform: translateX(-50%) translateY(6px);
+    z-index: 6;
+    font-size: 10px;
+    letter-spacing: .3em;
+    text-transform: uppercase;
+    padding: 9px 16px;
+    border: 1px solid rgba(255, 213, 74, .22);
+    border-radius: 999px;
+    background: rgba(20, 14, 0, .45);
+    backdrop-filter: blur(6px);
+    color: #ffe9a8;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .3s ease, transform .3s ease;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  #loader {
+    position: fixed; inset: 0; z-index: 10;
+    display: grid; place-items: center;
+    background: #000;
+    transition: opacity .8s ease;
+    letter-spacing: .35em;
+    font-size: 10px;
+    text-transform: uppercase;
+    color: var(--gold-dim);
+  }
+  #loader.done { opacity: 0; pointer-events: none; }
+  #loader .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #ffcc33; margin: 0 auto 18px;
+    box-shadow: 0 0 26px 8px rgba(255,190,30,.55);
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,100% { transform: scale(.8); opacity: .55; }
+    50%     { transform: scale(1.25); opacity: 1; }
+  }
+
+  #fallback {
+    position: fixed; inset: 0; z-index: 20;
+    display: none; place-items: center; text-align: center;
+    padding: 24px; background: #000; color: var(--gold-dim);
+    font-size: 12px; letter-spacing: .18em; line-height: 2;
+  }
+  #fallback.show { display: grid; }
+
+  @media (max-width: 640px) {
+    #hint { letter-spacing: .12em; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="scene"></canvas>
+<div id="vignette"></div>
+<div id="grain"></div>
+
+<header id="brand">
+  <h1>Glow</h1>
+  <p>Emissive Sphere · Study 02</p>
+  <div class="rule"></div>
+</header>
+
+<div id="glowRead">glow 1.00×</div>
+
+<nav id="hint">
+  <span>move</span> — 视差 · <span>scroll</span> — 辉光 · <span>click</span> — 耀斑
+</nav>
+
+<div id="toast">ready</div>
+
+<div id="loader"><div><div class="dot"></div>igniting</div></div>
+
+<div id="fallback">当前浏览器不支持 WebGL，请开启硬件加速或更换现代浏览器。</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.1/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.1/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer }   from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass }       from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass }  from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass }       from 'three/addons/postprocessing/OutputPass.js';
+
+/* ── WebGL 检查 ── */
+function webglOK() {
+  try {
+    const c = document.createElement('canvas');
+    return !!(window.WebGLRenderingContext && (c.getContext('webgl2') || c.getContext('webgl')));
+  } catch (e) { return false; }
+}
+if (!webglOK()) {
+  document.getElementById('fallback').classList.add('show');
+  throw new Error('no webgl');
+}
+
+/* ── 渲染器 ── */
+const canvas = document.getElementById('scene');
+const renderer = new THREE.WebGLRenderer({
+  canvas, antialias: true, alpha: false, powerPreference: 'high-performance'
+});
+let DPR = Math.min(window.devicePixelRatio || 1, 2);
+renderer.setPixelRatio(DPR);
+renderer.setSize(window.innerWidth, window.innerHeight, false);
+renderer.setClearColor(0x000000, 1);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+/* ── 场景 & 相机 ── */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000000);
+
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 200);
+const HOME = new THREE.Vector3(0, 0, 6);
+camera.position.copy(HOME);
+camera.lookAt(0, 0, 0);
+
+/* 球体内部点光源，增添暖色 */
+scene.add(new THREE.AmbientLight(0xffffff, 1.1));
+const starLight = new THREE.PointLight(0xffc23a, 5, 40, 2);
+scene.add(starLight);
+
+/* ── 核心球体 ── */
+const coreMat = new THREE.MeshStandardMaterial({
+  color: 0xffd21f,
+  emissive: new THREE.Color(0xffc400),
+  emissiveIntensity: 1.7,
+  roughness: 0.38,
+  metalness: 0.0
+});
+const core = new THREE.Mesh(new THREE.SphereGeometry(1, 128, 96), coreMat);
+scene.add(core);
+
+/* ── 菲涅尔大气光晕（贴合轮廓的加色辉光） ── */
+const shellMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uColor:     { value: new THREE.Color(0xffb524) },
+    uIntensity: { value: 1.25 },
+    uPower:     { value: 2.6 },
+    uTime:      { value: 0 }
+  },
+  vertexShader: /* glsl */`
+    varying vec3 vN; varying vec3 vV;
+    void main() {
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      vN = normalize(normalMatrix * normal);
+      vV = normalize(-mv.xyz);
+      gl_Position = projectionMatrix * mv;
+    }`,
+  fragmentShader: /* glsl */`
+    uniform vec3 uColor; uniform float uIntensity; uniform float uPower; uniform float uTime;
+    varying vec3 vN; varying vec3 vV;
+    void main() {
+      float f = 1.0 - abs(dot(normalize(vN), normalize(vV)));
+      f = pow(clamp(f, 0.0, 1.0), uPower);
+      float shimmer = 0.9 + 0.1 * sin(uTime * 1.6);
+      float a = f * uIntensity * shimmer;
+      gl_FragColor = vec4(uColor * a, a);
+    }`,
+  transparent: true,
+  blending: THREE.AdditiveBlending,
+  side: THREE.BackSide,
+  depthWrite: false
+});
+const shell = new THREE.Mesh(new THREE.SphereGeometry(1.32, 96, 64), shellMat);
+scene.add(shell);
+
+/* ── 外圈柔和光晕（corona 精灵） ── */
+function coronaTexture(size = 512) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  g.addColorStop(0.00, 'rgba(255,255,242,0.95)');
+  g.addColorStop(0.07, 'rgba(255,236,155,0.70)');
+  g.addColorStop(0.18, 'rgba(255,198,52,0.34)');
+  g.addColorStop(0.42, 'rgba(255,150,12,0.11)');
+  g.addColorStop(1.00, 'rgba(255,120,0,0.0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const corona = new THREE.Sprite(new THREE.SpriteMaterial({
+  map: coronaTexture(),
+  color: 0xffffff,
+  transparent: true,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  depthTest: false,
+  opacity: 0.9
+}));
+corona.scale.setScalar(6.4);
+corona.renderOrder = -3;
+scene.add(corona);
+
+/* ── 旋转光线盘（星芒光晕，随指针倾斜） ── */
+const raysMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uTime:      { value: 0 },
+    uIntensity: { value: 1 },
+    uColor:     { value: new THREE.Color(0xffc94a) }
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: /* glsl */`
+    uniform float uTime; uniform float uIntensity; uniform vec3 uColor;
+    varying vec2 vUv;
+    void main(){
+      vec2 p = vUv * 2.0 - 1.0;
+      float r = length(p);
+      float a = atan(p.y, p.x);
+      float rays = (0.5 + 0.5 * sin(a * 13.0 + uTime * 0.32));
+      rays *= (0.55 + 0.45 * sin(a * 24.0 - uTime * 0.21 + 1.7));
+      rays *= (0.6 + 0.4 * sin(a * 6.0 + uTime * 0.11));
+      float band = smoothstep(1.0, 0.10, r) * smoothstep(0.10, 0.34, r);
+      float halo = exp(-r * 3.4);
+      float c = rays * 0.42 * band + halo * 0.55;
+      c *= uIntensity;
+      gl_FragColor = vec4(uColor * c, c);
+    }`,
+  transparent: true,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  depthTest: false
+});
+const rays = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), raysMat);
+rays.scale.setScalar(9);
+rays.renderOrder = -4;
+scene.add(rays);
+
+/* ── 耀斑冲击波圆环 ── */
+const ringMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uP:     { value: 1 },
+    uColor: { value: new THREE.Color(0xfff0b0) }
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: /* glsl */`
+    uniform float uP; uniform vec3 uColor;
+    varying vec2 vUv;
+    void main(){
+      vec2 p = vUv * 2.0 - 1.0;
+      float r = length(p);
+      float radius = mix(0.07, 0.92, uP);
+      float w = 0.035 + 0.13 * uP;
+      float ring = exp(-pow((r - radius) / w, 2.0) * 2.2);
+      float fade = (1.0 - uP) * (1.0 - uP);
+      float a = ring * fade * 1.6;
+      gl_FragColor = vec4(uColor * a, a);
+    }`,
+  transparent: true,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  depthTest: false
+});
+const ring = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), ringMat);
+ring.scale.setScalar(9);
+ring.renderOrder = -2;
+ring.visible = false;
+scene.add(ring);
+
+/* ── 星空背景（闪烁的星点，带视差） ── */
+const STAR_COUNT = 800;
+const sPos = new Float32Array(STAR_COUNT * 3);
+const sSize = new Float32Array(STAR_COUNT);
+const sSeed = new Float32Array(STAR_COUNT);
+for (let i = 0; i < STAR_COUNT; i++) {
+  const r = 18 + Math.random() * 26;
+  const theta = Math.random() * Math.PI * 2;
+  const phi = Math.acos(2 * Math.random() - 1);
+  sPos[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+  sPos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+  sPos[i * 3 + 2] = r * Math.cos(phi);
+  sSize[i] = 0.04 + Math.random() * 0.16;
+  sSeed[i] = Math.random();
+}
+const starGeo = new THREE.BufferGeometry();
+starGeo.setAttribute('position', new THREE.BufferAttribute(sPos, 3));
+starGeo.setAttribute('aSize', new THREE.BufferAttribute(sSize, 1));
+starGeo.setAttribute('aSeed', new THREE.BufferAttribute(sSeed, 1));
+
+const starMat = new THREE.ShaderMaterial({
+  uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color(0xfff2cf) } },
+  vertexShader: /* glsl */`
+    attribute float aSize; attribute float aSeed;
+    uniform float uTime; varying float vA;
+    void main() {
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      vA = 0.6 + 0.4 * sin(uTime * (0.3 + aSeed * 0.9) + aSeed * 40.0);
+      gl_PointSize = aSize * (320.0 / -mv.z);
+      gl_Position = projectionMatrix * mv;
+    }`,
+  fragmentShader: /* glsl */`
+    uniform vec3 uColor; varying float vA;
+    void main() {
+      vec2 uv = gl_PointCoord - 0.5;
+      float d = length(uv) * 2.0;
+      float a = pow(max(0.0, 1.0 - d), 2.0);
+      gl_FragColor = vec4(uColor, a * vA);
+    }`,
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+});
+const stars = new THREE.Points(starGeo, starMat);
+scene.add(stars);
+
+/* ── 漂浮的暖色尘埃粒子（余烬） ── */
+const EMBER_COUNT = 240;
+const ePos = new Float32Array(EMBER_COUNT * 3);
+const eSize = new Float32Array(EMBER_COUNT);
+const eSeed = new Float32Array(EMBER_COUNT);
+for (let i = 0; i < EMBER_COUNT; i++) {
+  ePos[i * 3]     = (Math.random() - 0.5) * 8;
+  ePos[i * 3 + 1] = (Math.random() - 0.5) * 6;
+  ePos[i * 3 + 2] = (Math.random() - 0.5) * 6;
+  eSize[i] = 0.03 + Math.random() * 0.09;
+  eSeed[i] = Math.random();
+}
+const emberGeo = new THREE.BufferGeometry();
+emberGeo.setAttribute('position', new THREE.BufferAttribute(ePos, 3));
+emberGeo.setAttribute('aSize', new THREE.BufferAttribute(eSize, 1));
+emberGeo.setAttribute('aSeed', new THREE.BufferAttribute(eSeed, 1));
+
+const emberMat = new THREE.ShaderMaterial({
+  uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color(0xffb64a) } },
+  vertexShader: /* glsl */`
+    attribute float aSize; attribute float aSeed;
+    uniform float uTime; varying float vA;
+    void main() {
+      vec3 p = position;
+      float speed = 0.08 + fract(aSeed * 7.31) * 0.22;
+      p.y = mod(p.y + uTime * speed, 6.0) - 3.0;
+      p.x += sin(uTime * 0.35 + aSeed * 6.28) * 0.5;
+      p.z += cos(uTime * 0.27 + aSeed * 6.28) * 0.4;
+      vec4 mv = modelViewMatrix * vec4(p, 1.0);
+      vA = 0.25 + 0.75 * (0.5 + 0.5 * sin(uTime * (0.5 + aSeed) + aSeed * 40.0));
+      gl_PointSize = aSize * (300.0 / -mv.z);
+      gl_Position = projectionMatrix * mv;
+    }`,
+  fragmentShader: /* glsl */`
+    uniform vec3 uColor; varying float vA;
+    void main() {
+      vec2 uv = gl_PointCoord - 0.5;
+      float d = length(uv) * 2.0;
+      float a = pow(max(0.0, 1.0 - d), 2.0);
+      gl_FragColor = vec4(uColor, a * vA);
+    }`,
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+});
+const embers = new THREE.Points(emberGeo, emberMat);
+scene.add(embers);
+
+/* ── 后处理辉光（bloom） ── */
+const rt = new THREE.WebGLRenderTarget(
+  Math.floor(window.innerWidth * DPR), Math.floor(window.innerHeight * DPR),
+  { type: THREE.HalfFloatType, samples: 4 }
+);
+const composer = new EffectComposer(renderer, rt);
+composer.setPixelRatio(DPR);
+composer.setSize(window.innerWidth, window.innerHeight);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight), 0.62, 0.6, 0.0
+);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+/* ── 交互状态 ── */
+const ptr = { x: 0, y: 0, tx: 0, ty: 0 };
+let glow = 1.0;      // 辉光强度
+let flare = 0;       // 耀斑脉冲包络
+let ringP = 1;       // 冲击波进度（>=1 空闲）
+
+const toastEl = document.getElementById('toast');
+const glowReadEl = document.getElementById('glowRead');
+let toastTimer;
+function toast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1600);
+}
+
+function triggerFlare() {
+  flare = 1;
+  ringP = 0;
+  ring.visible = true;
+}
+
+addEventListener('pointermove', (e) => {
+  ptr.tx = (e.clientX / window.innerWidth) * 2 - 1;
+  ptr.ty = -((e.clientY / window.innerHeight) * 2 - 1);
+}, { passive: true });
+
+renderer.domElement.addEventListener('pointerdown', () => triggerFlare());
+
+addEventListener('wheel', (e) => {
+  e.preventDefault();
+  glow = THREE.MathUtils.clamp(glow + (e.deltaY > 0 ? -0.08 : 0.08), 0.35, 2.2);
+  glowReadEl.textContent = 'glow ' + glow.toFixed(2) + '×';
+  toast('glow ' + glow.toFixed(2) + '×');
+}, { passive: false });
+
+addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault(); triggerFlare();
+  } else if (e.key.toLowerCase() === 'f') {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+    else document.exitFullscreen?.();
+  }
+});
+
+/* ── 响应式 ── */
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setPixelRatio(DPR);
+  renderer.setSize(w, h, false);
+  composer.setPixelRatio(DPR);
+  composer.setSize(w, h);
+  bloom.setSize(w * DPR, h * DPR);
+}
+addEventListener('resize', resize);
+addEventListener('orientationchange', () => setTimeout(resize, 120));
+resize();
+
+/* ── 动画循环 ── */
+const clock = new THREE.Clock();
+let t = 0;
+
+function tick() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  t += dt;
+
+  /* 平滑指针 */
+  const k = 1 - Math.pow(0.0015, dt);
+  ptr.x += (ptr.tx - ptr.x) * k;
+  ptr.y += (ptr.ty - ptr.y) * k;
+
+  /* 耀斑包络衰减 + 冲击波推进 */
+  flare *= Math.pow(0.06, dt);
+  if (ringP < 1) {
+    ringP += dt / 1.35;
+    if (ringP >= 1) { ringP = 1; ring.visible = false; }
+    ringMat.uniforms.uP.value = ringP;
+  }
+
+  const breathe = Math.sin(t * 0.9) * 0.5 + Math.sin(t * 2.3) * 0.2;
+
+  core.scale.setScalar(1 + breathe * 0.008 + flare * 0.05);
+  coreMat.emissiveIntensity = (1.55 + breathe * 0.10) * (0.75 + 0.4 * glow) + flare * 1.6;
+  starLight.intensity = 5 * glow + flare * 8;
+
+  shell.scale.setScalar(1 + flare * 0.09 + breathe * 0.01);
+  shellMat.uniforms.uTime.value = t;
+  shellMat.uniforms.uIntensity.value = (1.05 + 0.12 * breathe) * glow + flare * 1.1;
+
+  corona.scale.setScalar((6.1 + breathe * 0.16 + flare * 1.1) * (0.86 + 0.22 * glow));
+  corona.material.opacity = 0.75 * glow + flare * 0.3;
+
+  /* ── 移动视差：相机轻微环绕 + 光晕反向偏移 ── */
+  camera.position.x = HOME.x + ptr.x * 0.4;
+  camera.position.y = HOME.y + ptr.y * 0.3;
+  camera.lookAt(0, 0, 0);
+  corona.position.x = -ptr.x * 0.55;
+  corona.position.y = -ptr.y * 0.45;
+
+  /* 旋转光线：随指针倾斜 + 缓慢自转 */
+  raysMat.uniforms.uTime.value = t;
+  raysMat.uniforms.uIntensity.value = (0.85 + 0.1 * breathe) * glow * (1 + ptr.y * 0.22) + flare * 0.9;
+  rays.rotation.z = ptr.x * 0.4 + t * 0.012;
+  rays.rotation.x = ptr.y * 0.22;
+  rays.scale.setScalar(9 * (1 + flare * 0.05));
+
+  /* 星空视差 + 尘埃漂移 */
+  starMat.uniforms.uTime.value = t;
+  stars.rotation.y = ptr.x * 0.08;
+  stars.rotation.x = ptr.y * 0.06;
+  emberMat.uniforms.uTime.value = t;
+  embers.rotation.y = t * 0.01;
+
+  /* 耀斑驱动的辉光 */
+  bloom.strength = 0.62 * glow + flare * 1.15;
+  bloom.radius = 0.6 + flare * 0.18;
+  renderer.toneMappingExposure = 1.02 + flare * 0.22;
+
+  composer.render();
+}
+renderer.setAnimationLoop(tick);
+
+/* 标签页隐藏时暂停，节省性能 */
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) renderer.setAnimationLoop(null);
+  else { clock.getDelta(); renderer.setAnimationLoop(tick); }
+});
+
+/* 开场揭示 */
+requestAnimationFrame(() => {
+  setTimeout(() => {
+    document.getElementById('loader').classList.add('done');
+    toast('scroll 调辉光 · click 触发耀斑');
+  }, 350);
+});
+</script>
+</body>
+</html>

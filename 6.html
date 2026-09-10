@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>知微 ZHWEI — 见微知著的中文大模型平台</title>
+<meta name="description" content="知微是新一代中文大模型平台:语言、视觉与推理在同一个克制而敏锐的内核中协同。见微,而知著。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600;700;900&family=Ma+Shan+Zheng&family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500;1,600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f6f0e3;
+    --paper-deep:#ece2cc;
+    --ink:#201b14;
+    --ink-2:#3c3429;
+    --muted:#8b7e68;
+    --cinnabar:#b2402f;
+    --cinnabar-deep:#8c2c1f;
+    --celadon:#5c7568;
+    --line:rgba(32,27,20,.16);
+    --line-soft:rgba(32,27,20,.09);
+    --serif:'Noto Serif SC','Songti SC','SimSun',serif;
+    --brush:'Ma Shan Zheng','Kaiti SC','STKaiti',cursive;
+    --latin:'Cormorant Garamond',Georgia,serif;
+    --mono:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+    --maxw:1240px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+  body{
+    font-family:var(--serif);
+    background:var(--paper);
+    color:var(--ink);
+    line-height:1.95;
+    letter-spacing:.01em;
+    overflow-x:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{background:var(--cinnabar);color:var(--paper)}
+  a{color:inherit;text-decoration:none}
+  em{font-style:italic;font-family:var(--latin);letter-spacing:.04em}
+  .grain{
+    position:fixed;inset:0;z-index:9999;pointer-events:none;opacity:.05;mix-blend-mode:multiply;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  }
+
+  /* ---------- scroll progress ---------- */
+  #progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:120;transform-origin:0 50%;transform:scaleX(0);
+    background:linear-gradient(90deg,var(--cinnabar),var(--cinnabar-deep))}
+
+  /* ---------- header ---------- */
+  .site-head{
+    position:fixed;top:0;left:0;right:0;z-index:100;
+    background:linear-gradient(180deg,rgba(246,240,227,.92),rgba(246,240,227,.0));
+    border-bottom:1px solid transparent;
+    transition:border-color .4s,background .4s;
+  }
+  .site-head.scrolled{border-bottom-color:var(--line-soft)}
+  .head-inner{max-width:var(--maxw);margin:0 auto;display:flex;align-items:center;gap:24px;padding:16px clamp(20px,4vw,44px)}
+  .brand{display:flex;align-items:center;gap:13px;cursor:pointer}
+  .brand-name{font-weight:900;font-size:1.28rem;letter-spacing:.02em;line-height:1.05}
+  .brand-name small{display:block;font-family:var(--latin);font-style:italic;font-weight:500;font-size:.66rem;
+    color:var(--muted);letter-spacing:.34em;margin-top:2px}
+  nav.head-nav{display:flex;gap:4px;margin-inline-start:auto;flex-wrap:wrap}
+  nav.head-nav a{
+    padding:7px 13px;font-size:.9rem;color:var(--ink-2);border-radius:3px;transition:.25s;position:relative;letter-spacing:.04em
+  }
+  nav.head-nav a::after{content:'';position:absolute;left:13px;right:13px;bottom:4px;height:1px;background:var(--cinnabar);
+    transform:scaleX(0);transform-origin:left;transition:transform .3s}
+  nav.head-nav a:hover{color:var(--cinnabar)}
+  nav.head-nav a:hover::after{transform:scaleX(1)}
+  .head-cta{
+    padding:9px 20px;border:1px solid var(--cinnabar);border-radius:2px;color:var(--cinnabar);
+    font-size:.88rem;font-weight:600;letter-spacing:.06em;transition:.25s;white-space:nowrap
+  }
+  .head-cta:hover{background:var(--cinnabar);color:var(--paper)}
+
+  /* ---------- seal (印章) ---------- */
+  .seal{
+    position:relative;display:grid;place-items:center;flex:0 0 auto;
+    width:86px;height:86px;background:var(--cinnabar);color:var(--paper);
+    font-family:var(--brush);font-size:46px;line-height:1;border-radius:12px;
+    box-shadow:inset 0 0 0 2px rgba(246,240,227,.9),inset 0 0 0 5px var(--cinnabar),inset 0 0 0 7px rgba(246,240,227,.6);
+    transform:rotate(-4deg);user-select:none
+  }
+  .seal::after{content:'';position:absolute;inset:11px;border:1px solid rgba(246,240,227,.5);border-radius:6px}
+  .seal.sm{width:40px;height:40px;font-size:22px;border-radius:7px;box-shadow:inset 0 0 0 1.5px rgba(246,240,227,.9),
+    inset 0 0 0 3.5px var(--cinnabar);transform:rotate(-6deg)}
+  .seal.sm::after{inset:6px;border-radius:3px}
+
+  /* ---------- rail (left chapter index) ---------- */
+  .rail{position:fixed;top:50%;left:26px;transform:translateY(-50%);z-index:90;display:flex;flex-direction:column;gap:14px}
+  .rail a{display:flex;align-items:center;gap:10px;cursor:pointer}
+  .rail a b{width:22px;height:22px;display:grid;place-items:center;font-weight:700;font-size:.72rem;color:var(--muted);
+    border:1px solid var(--line);border-radius:50%;transition:.3s}
+  .rail a span{font-size:.78rem;color:var(--muted);opacity:0;transform:translateX(-6px);transition:.3s;white-space:nowrap}
+  .rail a:hover span{opacity:1;transform:none}
+  .rail a.on b{background:var(--cinnabar);color:var(--paper);border-color:var(--cinnabar);transform:scale(1.15)}
+  .rail a.on span{opacity:1;transform:none;color:var(--cinnabar)}
+
+  /* ---------- layout ---------- */
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 clamp(20px,5vw,56px)}
+  main{position:relative}
+  .chapter{position:relative;padding:clamp(88px,11vw,140px) 0;border-top:1px solid var(--line-soft)}
+  .chapter:first-of-type{border-top:0}
+
+  .ch-head{display:flex;align-items:flex-start;gap:clamp(18px,3vw,40px);margin-bottom:clamp(30px,4vw,54px)}
+  .chnum{font-family:var(--serif);font-weight:900;font-size:clamp(2.6rem,6vw,4.2rem);line-height:.9;color:var(--cinnabar)}
+  .ch-title{flex:1}
+  .ch-en{font-family:var(--latin);font-style:italic;font-size:.82rem;letter-spacing:.36em;color:var(--muted);text-transform:uppercase;margin-bottom:10px}
+  .ch-title h2{font-size:clamp(1.7rem,3.6vw,2.7rem);font-weight:900;line-height:1.4;letter-spacing:-.01em}
+  .ch-idx{font-family:var(--latin);font-style:italic;color:var(--muted);font-size:.92rem;letter-spacing:.08em;padding-top:10px;white-space:nowrap}
+
+  .grid{display:grid;grid-template-columns:1.05fr .95fr;gap:clamp(28px,5vw,72px);align-items:start}
+  .grid.flip > :first-child{order:2}
+  .grid.flip > :last-child{order:1}
+
+  .lead{font-size:clamp(1rem,1.7vw,1.18rem);color:var(--ink-2);max-width:52ch}
+  .lead b{font-weight:700;color:var(--ink)}
+
+  /* drop cap */
+  .dropcap::first-letter{
+    font-size:3.05em;line-height:.82;float:left;padding:.06em .12em 0 0;
+    font-weight:900;color:var(--cinnabar)
+  }
+
+  ul.feats{list-style:none;display:grid;gap:0;border-top:1px solid var(--line)}
+  ul.feats li{display:flex;gap:16px;align-items:flex-start;padding:20px 4px;border-bottom:1px solid var(--line);font-size:.96rem;color:var(--ink-2)}
+  ul.feats li i{
+    flex:0 0 auto;width:11px;height:11px;margin-top:8px;border-radius:50%;
+    background:var(--cinnabar);box-shadow:0 0 0 4px rgba(178,64,47,.12);font-style:normal
+  }
+  ul.feats li b{display:block;color:var(--ink);font-weight:700;margin-bottom:2px}
+
+  ul.nums{list-style:none;display:grid;gap:0;border-top:1px solid var(--line)}
+  ul.nums li{display:flex;gap:18px;align-items:flex-start;padding:20px 4px;border-bottom:1px solid var(--line);font-size:.96rem;color:var(--ink-2)}
+  ul.nums li i{
+    flex:0 0 auto;font-style:normal;font-family:var(--latin);font-weight:600;font-size:1.1rem;color:var(--cinnabar);
+    width:30px;height:30px;display:grid;place-items:center;border:1px solid var(--cinnabar);border-radius:50%
+  }
+  ul.nums li b{display:block;color:var(--ink);font-weight:700;margin-bottom:2px}
+
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);margin-top:36px}
+  .stat{background:var(--paper);padding:22px 18px;text-align:left}
+  .stat b{display:block;font-size:clamp(1.25rem,2.4vw,1.9rem);font-weight:900;color:var(--cinnabar);line-height:1.1}
+  .stat span{font-size:.78rem;color:var(--muted);letter-spacing:.05em}
+
+  .chips{display:flex;flex-wrap:wrap;gap:9px;margin-top:30px}
+  .chip{font-size:.8rem;padding:7px 15px;border:1px solid var(--line);border-radius:2px;color:var(--ink-2);background:rgba(246,240,227,.5);letter-spacing:.04em}
+
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:10px;
+    padding:14px 30px;border-radius:2px;font-family:inherit;font-size:.95rem;font-weight:600;cursor:pointer;
+    letter-spacing:.06em;transition:.28s;border:1px solid transparent
+  }
+  .btn.solid{background:var(--cinnabar);color:var(--paper);box-shadow:0 12px 30px -12px rgba(178,64,47,.6)}
+  .btn.solid:hover{background:var(--cinnabar-deep);transform:translateY(-2px)}
+  .btn.ghost{border-color:var(--ink);color:var(--ink);background:transparent}
+  .btn.ghost:hover{background:var(--ink);color:var(--paper)}
+  .btn .arr{font-family:var(--latin);font-style:italic;font-size:1.1em;transition:transform .28s}
+  .btn:hover .arr{transform:translateX(4px)}
+
+  /* ---------- hero ---------- */
+  .hero{padding-top:clamp(120px,16vh,180px);padding-bottom:clamp(80px,12vh,150px)}
+  .hero-grid{display:grid;grid-template-columns:1.5fr .7fr;gap:clamp(30px,5vw,70px);align-items:center}
+  .eyebrow{display:flex;align-items:center;gap:12px;font-size:.8rem;letter-spacing:.3em;color:var(--cinnabar);margin-bottom:26px}
+  .eyebrow::before{content:'';width:34px;height:1px;background:var(--cinnabar)}
+  .hero h1{font-size:clamp(3.2rem,9vw,7.2rem);font-weight:900;line-height:1.02;letter-spacing:-.02em}
+  .hero h1 .line{display:block}
+  .hero h1 .red{color:var(--cinnabar);position:relative;display:inline-block}
+  .brush{position:absolute;left:0;right:0;bottom:-.28em;height:.34em;overflow:visible;pointer-events:none}
+  .brush path{fill:none;stroke:var(--cinnabar);stroke-width:10;stroke-linecap:round;stroke-dasharray:600;stroke-dashoffset:600;opacity:.85}
+  .hero .sub-en{font-family:var(--latin);font-style:italic;letter-spacing:.3em;color:var(--muted);font-size:.92rem;margin-top:18px;text-transform:uppercase}
+  .hero .lead{margin-top:28px;font-size:clamp(1.02rem,1.8vw,1.25rem)}
+  .hero .ctas{display:flex;flex-wrap:wrap;gap:14px;margin-top:34px}
+
+  .hero-glyph{position:relative;display:flex;flex-direction:column;align-items:center;gap:26px}
+  .glyph-char{font-family:var(--brush);font-size:clamp(9rem,22vw,17rem);line-height:.9;color:var(--ink);
+    transform:rotate(1deg);filter:drop-shadow(0 18px 30px rgba(32,27,20,.14))}
+  .glyph-char .red{color:var(--cinnabar)}
+  .glyph-side{
+    writing-mode:vertical-rl;text-orientation:mixed;font-size:.82rem;letter-spacing:.42em;color:var(--muted);
+    padding:10px 4px;border-left:1px solid var(--line)
+  }
+
+  /* ---------- pull quote ---------- */
+  .quote{margin-top:44px;padding:26px 30px;border-left:3px solid var(--cinnabar);background:var(--paper-deep)}
+  .quote p{font-family:var(--serif);font-weight:600;font-size:clamp(1.1rem,2.2vw,1.5rem);line-height:1.7;color:var(--ink)}
+  .quote span{display:block;margin-top:12px;font-family:var(--latin);font-style:italic;color:var(--muted);font-size:.9rem;letter-spacing:.14em}
+
+  /* ---------- code card ---------- */
+  .card{position:relative;margin-top:8px;border:1px solid var(--line);background:var(--paper-deep);box-shadow:0 30px 70px -40px rgba(32,27,20,.5)}
+  .card .bar{display:flex;align-items:center;gap:8px;padding:13px 18px;border-bottom:1px solid var(--line)}
+  .card .bar i{width:10px;height:10px;border-radius:50%;background:var(--cinnabar);opacity:.7}
+  .card .bar i:nth-child(2){background:var(--celadon)}
+  .card .bar i:nth-child(3){background:var(--muted)}
+  .card .bar span{margin-inline-start:auto;font-family:var(--latin);font-style:italic;color:var(--muted);font-size:.82rem;letter-spacing:.1em}
+  pre.code{
+    direction:ltr;text-align:left;font-family:var(--mono);font-size:.82rem;line-height:1.9;
+    padding:24px 22px;overflow-x:auto;color:var(--ink-2);counter-reset:ln
+  }
+  pre.code .ln{display:block;position:relative;padding-left:44px}
+  pre.code .ln::before{counter-increment:ln;content:counter(ln,decimal-leading-zero);position:absolute;left:0;color:rgba(178,64,47,.45);font-size:.72rem}
+  pre.code .k{color:var(--cinnabar-deep)}
+  pre.code .s{color:var(--celadon)}
+  pre.code .c{color:var(--muted);font-style:italic}
+  pre.code .f{color:var(--cinnabar)}
+  pre.code .n{color:var(--ink)}
+
+  /* ---------- cta ---------- */
+  .cta{text-align:center}
+  .cta .ch-head{justify-content:center;text-align:center}
+  .cta .ch-en{margin-inline:auto}
+  .cta .lead{margin-inline:auto}
+  form.sub{display:flex;gap:12px;margin:34px auto 0;max-width:520px;flex-wrap:wrap}
+  form.sub input{flex:1 1 280px;min-width:200px;padding:15px 20px;border:1px solid var(--line);border-radius:2px;
+    background:rgba(246,240,227,.6);color:var(--ink);font-family:inherit;font-size:.95rem;outline:none;transition:.25s}
+  form.sub input:focus{border-color:var(--cinnabar);box-shadow:0 0 0 4px rgba(178,64,47,.09)}
+
+  /* ---------- footer ---------- */
+  footer{border-top:1px solid var(--line-soft);padding:64px 0 48px;margin-top:20px;background:var(--paper-deep)}
+  .f-grid{display:flex;flex-wrap:wrap;gap:26px;justify-content:space-between;align-items:center}
+  footer .motto{font-family:var(--latin);font-style:italic;color:var(--muted);font-size:.95rem;letter-spacing:.12em}
+  footer p{font-size:.8rem;color:var(--muted)}
+  .f-links{display:flex;gap:20px;flex-wrap:wrap;font-size:.86rem;color:var(--ink-2)}
+  .f-links a:hover{color:var(--cinnabar)}
+
+  #toast{position:fixed;bottom:28px;left:50%;transform:translate(-50%,30px);z-index:150;opacity:0;pointer-events:none;
+    padding:14px 26px;background:var(--ink);color:var(--paper);font-size:.9rem;border-radius:2px;letter-spacing:.05em;
+    box-shadow:0 20px 50px -20px rgba(0,0,0,.5);transition:.5s}
+  #toast.on{opacity:1;transform:translate(-50%,0)}
+
+  /* ---------- reveal ---------- */
+  [data-reveal]{opacity:0;transform:translateY(26px);transition:opacity .9s cubic-bezier(.22,.61,.36,1),transform .9s cubic-bezier(.22,.61,.36,1);transition-delay:var(--d,0s)}
+  [data-reveal].in{opacity:1;transform:none}
+
+  @media (max-width:1320px){
+    .rail{display:none}
+  }
+  @media (max-width:900px){
+    nav.head-nav{display:none}
+    .grid{grid-template-columns:1fr}
+    .grid.flip > :first-child{order:0}
+    .grid.flip > :last-child{order:0}
+    .hero-grid{grid-template-columns:1fr}
+    .hero-glyph{order:-1;flex-direction:row;justify-content:flex-start}
+    .glyph-char{font-size:7rem}
+    .glyph-side{writing-mode:horizontal-tb;border-left:0;border-top:1px solid var(--line);padding:10px 0 0;letter-spacing:.3em}
+    .stats{grid-template-columns:1fr 1fr}
+  }
+  @media (max-width:520px){
+    .head-cta{display:none}
+    .stats{grid-template-columns:1fr 1fr;gap:1px}
+    .stat{padding:16px 12px}
+    .hero h1{font-size:3rem}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{transition:none!important;animation:none!important}
+    [data-reveal]{opacity:1;transform:none}
+    html{scroll-behavior:auto}
+  }
+</style>
+</head>
+<body>
+
+<div class="grain"></div>
+<div id="progress"></div>
+
+<header class="site-head" id="head">
+  <div class="head-inner">
+    <a class="brand" href="#c1">
+      <span class="seal sm">知</span>
+      <span class="brand-name">知微<small>ZHWEI AI</small></span>
+    </a>
+    <nav class="head-nav">
+      <a href="#c2">内核</a>
+      <a href="#c3">架构</a>
+      <a href="#c4">数据</a>
+      <a href="#c5">底座</a>
+      <a href="#c6">安全</a>
+      <a href="#c7">开发者</a>
+    </nav>
+    <a class="head-cta" href="#c8">获取访问</a>
+  </div>
+</header>
+
+<nav class="rail" id="rail" aria-label="章节"></nav>
+
+<main>
+
+  <!-- 壹 · 首章 -->
+  <section class="chapter hero" id="c1" data-label="首章">
+    <div class="wrap">
+      <div class="hero-grid">
+        <div>
+          <div class="eyebrow" data-reveal>壹 · 首章</div>
+          <h1>
+            <span class="line" data-reveal style="--d:.06s">见微<span class="red">,</span></span>
+            <span class="line" data-reveal style="--d:.14s"><span class="red">知著<svg class="brush" viewBox="0 0 420 40" preserveAspectRatio="none" aria-hidden="true"><path d="M6 22 C 90 8, 150 11, 212 16 S 330 24, 414 11"/></svg></span></span>
+          </h1>
+          <div class="sub-en" data-reveal style="--d:.2s">Know the subtle · See the whole</div>
+          <p class="lead dropcap" data-reveal style="--d:.26s">
+            知微是新一代<b>中文大模型平台</b>。语言、视觉与推理在同一个克制而敏锐的内核中协同——
+            它从字里行间的细微信号出发,还原世界的全貌,并为你所用。
+          </p>
+          <div class="ctas" data-reveal style="--d:.32s">
+            <a class="btn solid" href="#c7">获取 API 密钥 <span class="arr">→</span></a>
+            <a class="btn ghost" href="#c2">阅读设计哲学 <span class="arr">↓</span></a>
+          </div>
+          <div class="stats" data-reveal style="--d:.4s">
+            <div class="stat"><b>320 亿</b><span>参数规模</span></div>
+            <div class="stat"><b>200K</b><span>上下文窗口</span></div>
+            <div class="stat"><b>99.95%</b><span>服务可用性</span></div>
+          </div>
+        </div>
+        <div class="hero-glyph" data-reveal style="--d:.2s">
+          <span class="glyph-char">知<span class="red">微</span></span>
+          <span class="seal">知微</span>
+          <span class="glyph-side">洞见于细微之处</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 贰 · 内核 -->
+  <section class="chapter" id="c2" data-label="内核">
+    <div class="wrap">
+      <div class="ch-head" data-reveal>
+        <span class="chnum">贰</span>
+        <div class="ch-title">
+          <div class="ch-en">The Core</div>
+          <h2>一颗静默而敏锐的内核</h2>
+        </div>
+        <span class="ch-idx">02 / 08</span>
+      </div>
+      <div class="grid">
+        <div data-reveal>
+          <p class="lead">
+            知微-1 在超过 <b>四万亿 token</b> 的中文、英文与多语料上训练而成。它擅长多步推理、
+            文化语境的拿捏、数学与代码——每一次回答,都是静水深流般的推演。
+          </p>
+          <div class="quote">
+            <p>“真正的理解,不喧哗。它只是在你发问之前,已经想好了答案。”</p>
+            <span>— 知微设计手记 · 卷一</span>
+          </div>
+        </div>
+        <ul class="feats" data-reveal style="--d:.1s">
+          <li><i></i><div><b>链式推理</b>像人一样,先把问题想清楚,再开口。</div></li>
+          <li><i></i><div><b>多模态</b>同时理解文本、图像、表格与声音。</div></li>
+          <li><i></i><div><b>私域微调</b>用你的数据,驯养属于你的知微。</div></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 叁 · 架构 -->
+  <section class="chapter" id="c3" data-label="架构">
+    <div class="wrap">
+      <div class="ch-head" data-reveal>
+        <span class="chnum">叁</span>
+        <div class="ch-title">
+          <div class="ch-en">The Architecture</div>
+          <h2>稀疏专家,举重若轻</h2>
+        </div>
+        <span class="ch-idx">03 / 08</span>
+      </div>
+      <div class="grid flip">
+        <div data-reveal>
+          <p class="lead">
+            每一个模块都是一位专家。智能路由只为每个问题唤醒最相关的一小部分——
+            于是答案更快,算力更省,而洞见不减分毫。
+          </p>
+          <div class="stats">
+            <div class="stat"><b>96</b><span>活跃专家</span></div>
+            <div class="stat"><b>−62%</b><span>推理成本</span></div>
+            <div class="stat"><b>240</b><span>tok/s 流式</span></div>
+          </div>
+        </div>
+        <div data-reveal style="--d:.1s">
+          <p class="lead">
+            它不追求面面俱到的笨拙,而是信奉“用最小的唤醒,抵达最深的看见”。
+          </p>
+          <div class="chips">
+            <span class="chip">稀疏混合专家</span>
+            <span class="chip">语义路由</span>
+            <span class="chip">流式生成</span>
+            <span class="chip">长程注意力</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 肆 · 数据 -->
+  <section class="chapter" id="c4" data-label="数据">
+    <div class="wrap">
+      <div class="ch-head" data-reveal>
+        <span class="chnum">肆</span>
+        <div class="ch-title">
+          <div class="ch-en">The Data</div>
+          <h2>让每一行数据都问心无愧</h2>
+        </div>
+        <span class="ch-idx">04 / 08</span>
+      </div>
+      <div class="grid">
+        <div data-reveal>
+          <p class="lead">
+            训练之前,数据要穿过九道关:去标识、测偏见、核来源、过人工复核。
+            知微所学到的,皆可追溯、可审计、可被质询。
+          </p>
+          <div class="stats">
+            <div class="stat"><b>4.2 万亿</b><span>训练语料</span></div>
+            <div class="stat"><b>9 层</b><span>数据清洗</span></div>
+            <div class="stat"><b>100%</b><span>可审计</span></div>
+          </div>
+        </div>
+        <ul class="nums" data-reveal style="--d:.1s">
+          <li><i>1</i><div><b>自动脱敏</b>敏感信息在进入训练前即被剥离。</div></li>
+          <li><i>2</i><div><b>偏见评测</b>逐版本的文化与性别偏见检验。</div></li>
+          <li><i>3</i><div><b>全程溯源</b>每一次回答,都有迹可循。</div></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 伍 · 底座 -->
+  <section class="chapter" id="c5" data-label="底座">
+    <div class="wrap">
+      <div class="ch-head" data-reveal>
+        <span class="chnum">伍</span>
+        <div class="ch-title">
+          <div class="ch-en">The Infrastructure</div>
+          <h2>永不困倦的底座</h2>
+        </div>
+        <span class="ch-idx">05 / 08</span>
+      </div>
+      <div class="grid flip">
+        <div data-reveal>
+          <p class="lead">
+            三座自建数据中心里的 GPU 集群,以秒为单位弹性伸缩。你的数据不出境,
+            流量被智能地分摊到每一个节点。
+          </p>
+          <div class="stats">
+            <div class="stat"><b>3 座</b><span>数据中心</span></div>
+            <div class="stat"><b>38ms</b><span>中位延迟</span></div>
+            <div class="stat"><b>99.99%</b><span>合同可用性</span></div>
+          </div>
+        </div>
+        <div data-reveal style="--d:.1s">
+          <p class="lead">
+            稳定的背后是朴素的本分:不眠不休,不缺席,也不越界。
+          </p>
+          <div class="chips">
+            <span class="chip">自动伸缩</span>
+            <span class="chip">集群 GPU</span>
+            <span class="chip">边缘缓存</span>
+            <span class="chip">7×24 监控</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 陆 · 安全 -->
+  <section class="chapter" id="c6" data-label="安全">
+    <div class="wrap">
+      <div class="ch-head" data-reveal>
+        <span class="chnum">陆</span>
+        <div class="ch-title">
+          <div class="ch-en">The Security</div>
+          <h2>隐私,是架构的底线</h2>
+        </div>
+        <span class="ch-idx">06 / 08</span>
+      </div>
+      <div class="grid">
+        <div data-reveal>
+          <p class="lead">
+            端到端加密、租户硬隔离、实时审计日志,以及可落地的私有化部署。
+            除非你点头,知微绝不用你的数据训练自己。
+          </p>
+        </div>
+        <ul class="feats" data-reveal style="--d:.1s">
+          <li><i></i><div><b>全程加密</b>AES-256 静态与传输双重加密。</div></li>
+          <li><i></i><div><b>合规认证</b>通过 ISO 27001 等安全认证。</div></li>
+          <li><i></i><div><b>私有部署</b>在你的机房里,也能落地生根。</div></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 柒 · 开发者 -->
+  <section class="chapter" id="c7" data-label="开发者">
+    <div class="wrap">
+      <div class="ch-head" data-reveal>
+        <span class="chnum">柒</span>
+        <div class="ch-title">
+          <div class="ch-en">For Developers</div>
+          <h2>几行代码,尽在掌握</h2>
+        </div>
+        <span class="ch-idx">07 / 08</span>
+      </div>
+      <div class="grid">
+        <div data-reveal>
+          <p class="lead">
+            为 JavaScript、Python 与 Go 提供官方 SDK,兼容主流协议。
+            对话、语义检索、自动代理与语音——一把钥匙,开所有门。
+          </p>
+          <div class="chips">
+            <span class="chip">REST + gRPC</span>
+            <span class="chip">Webhooks</span>
+            <span class="chip">函数调用</span>
+            <span class="chip">内置 RAG</span>
+            <span class="chip">中文文档</span>
+          </div>
+        </div>
+        <div class="card" data-reveal style="--d:.12s">
+          <div class="bar"><i></i><i></i><i></i><span>stream.ts</span></div>
+<pre class="code"><span class="ln"><span class="c">// 流式调用知微-1</span></span>
+<span class="ln"><span class="k">import</span> { <span class="f">Zhwei</span> } <span class="k">from</span> <span class="s">"@zhwei/sdk"</span>;</span>
+<span class="ln"></span>
+<span class="ln"><span class="k">const</span> ai = <span class="k">new</span> <span class="f">Zhwei</span>({ apiKey: process.env.<span class="n">ZHWEI_KEY</span> });</span>
+<span class="ln"></span>
+<span class="ln"><span class="k">const</span> stream = <span class="k">await</span> ai.chat.<span class="f">stream</span>({</span>
+<span class="ln">  model: <span class="s">"zhwei-1-pro"</span>,</span>
+<span class="ln">  locale: <span class="s">"zh-CN"</span>,</span>
+<span class="ln">  messages: [{ role: <span class="s">"user"</span>, content: <span class="s">"帮我总结这份合同"</span> }]</span>
+<span class="ln">});</span>
+<span class="ln"></span>
+<span class="ln"><span class="k">for await</span> (<span class="k">const</span> chunk <span class="k">of</span> stream) {</span>
+<span class="ln">  process.stdout.<span class="f">write</span>(chunk.text);</span>
+<span class="ln">}</span></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 捌 · 开始 -->
+  <section class="chapter cta" id="c8" data-label="开始">
+    <div class="wrap">
+      <div class="ch-head" data-reveal>
+        <span class="chnum">捌</span>
+        <div class="ch-title">
+          <div class="ch-en">The Beginning</div>
+          <h2>你的故事,从这一笔开始</h2>
+        </div>
+        <span class="ch-idx">08 / 08</span>
+      </div>
+      <p class="lead" data-reveal style="--d:.08s">
+        加入已经用知微点亮产品的数万名开发者与上千家机构。首批额度,免费奉上。
+      </p>
+      <form class="sub" data-reveal style="--d:.16s">
+        <input type="email" placeholder="你的工作邮箱" required aria-label="邮箱">
+        <button class="btn solid" type="submit">获取早鸟访问 <span class="arr">→</span></button>
+      </form>
+      <div class="chips" data-reveal style="--d:.24s;justify-content:center">
+        <span class="chip">无需信用卡</span>
+        <span class="chip">赠送 100 万 token</span>
+        <span class="chip">中文支持</span>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap f-grid">
+    <div class="brand">
+      <span class="seal sm">知</span>
+      <span class="brand-name">知微<small>ZHWEI AI</small></span>
+    </div>
+    <div class="f-links">
+      <a href="#c2">模型</a><a href="#c3">架构</a><a href="#c4">数据</a>
+      <a href="#c6">安全</a><a href="#c7">文档</a><a href="#c8">联系</a>
+    </div>
+    <span class="motto">以墨为心 · 见微知著</span>
+    <p>© 知微 AI · 以匠心雕琢</p>
+  </div>
+</footer>
+
+<div id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---------- reveal on scroll ---------- */
+  const reveals = document.querySelectorAll('[data-reveal]');
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+      });
+    }, { threshold: 0.14, rootMargin: '0px 0px -6% 0px' });
+    reveals.forEach(el => io.observe(el));
+  } else {
+    reveals.forEach(el => el.classList.add('in'));
+  }
+
+  /* ---------- brush stroke draw on hero reveal ---------- */
+  const brush = document.querySelector('.brush path');
+  const heroRed = document.querySelector('.hero h1 .red');
+  if (brush && 'IntersectionObserver' in window) {
+    const bio = new IntersectionObserver((es) => {
+      es.forEach(e => {
+        if (e.isIntersecting) {
+          brush.style.transition = 'stroke-dashoffset 1.3s cubic-bezier(.6,.05,.2,1) .5s';
+          brush.style.strokeDashoffset = '0';
+          bio.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.5 });
+    bio.observe(heroRed);
+  }
+
+  /* ---------- scroll progress ---------- */
+  const progress = document.getElementById('progress');
+  function onScroll() {
+    const st = window.scrollY || document.documentElement.scrollTop;
+    const h = document.documentElement.scrollHeight - innerHeight;
+    progress.style.transform = 'scaleX(' + (h > 0 ? st / h : 0) + ')';
+    document.getElementById('head').classList.toggle('scrolled', st > 30);
+    setActiveRail(st);
+    parallax(st);
+  }
+
+  /* ---------- left rail ---------- */
+  const sections = Array.from(document.querySelectorAll('main .chapter'));
+  const rail = document.getElementById('rail');
+  const CN = ['壹','贰','叁','肆','伍','陆','柒','捌'];
+  const railItems = [];
+  sections.forEach((s, i) => {
+    const a = document.createElement('a');
+    a.innerHTML = '<b>' + CN[i] + '</b><span>' + s.dataset.label + '</span>';
+    a.addEventListener('click', () => scrollToSec(s));
+    rail.appendChild(a);
+    railItems.push(a);
+  });
+  function setActiveRail(st) {
+    let idx = 0;
+    sections.forEach((s, i) => { if (st >= s.offsetTop - innerHeight * 0.5) idx = i; });
+    railItems.forEach((a, i) => a.classList.toggle('on', i === idx));
+  }
+  function scrollToSec(s) {
+    window.scrollTo({ top: s.offsetTop + 2, behavior: 'smooth' });
+  }
+
+  /* ---------- glyph parallax ---------- */
+  const glyph = document.querySelector('.hero-glyph');
+  function parallax(st) {
+    if (!glyph) return;
+    if (st < innerHeight * 1.2) glyph.style.transform = 'translateY(' + (st * 0.06) + 'px)';
+  }
+
+  /* ---------- smooth anchors ---------- */
+  document.querySelectorAll('a[href^="#"]').forEach(a => {
+    a.addEventListener('click', (e) => {
+      const t = document.querySelector(a.getAttribute('href'));
+      if (t) { e.preventDefault(); window.scrollTo({ top: t.offsetTop + 2, behavior: 'smooth' }); }
+    });
+  });
+
+  /* ---------- toast ---------- */
+  const toast = document.getElementById('toast');
+  let toastT;
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add('on');
+    clearTimeout(toastT);
+    toastT = setTimeout(() => toast.classList.remove('on'), 3200);
+  }
+  document.querySelector('form.sub').addEventListener('submit', (e) => {
+    e.preventDefault();
+    showToast('谢谢!早鸟访问密钥即将送达你的邮箱 ✦');
+    e.target.reset();
+  });
+
+  addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+})();
+</script>
+</body>
+</html>

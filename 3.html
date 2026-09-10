@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>HEXFORGE // 熔核蜂巢矩阵</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Michroma&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --gold:#ffb340;
+    --gold-hot:#ffe0a3;
+    --gold-dim:rgba(255,179,64,.5);
+    --gold-soft:rgba(255,214,140,.72);
+    --ember:#ff5a2e;
+    --bg:#080502;
+    --line:rgba(255,179,64,.24);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);}
+  body{
+    font-family:"Share Tech Mono",ui-monospace,Menlo,Consolas,"PingFang SC","Microsoft YaHei",monospace;
+    color:var(--gold);
+    -webkit-font-smoothing:antialiased;
+    cursor:crosshair;
+  }
+  canvas#gl{position:fixed;inset:0;display:block;width:100%;height:100%;}
+
+  /* ---------- 颗粒覆盖 ---------- */
+  #grain{
+    position:fixed;inset:0;z-index:6;pointer-events:none;opacity:.06;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");
+    mix-blend-mode:overlay;
+  }
+
+  /* ---------- HUD ---------- */
+  #hud{position:fixed;inset:0;pointer-events:none;z-index:5;}
+  #hud .scan{
+    position:absolute;left:0;right:0;height:120px;
+    background:linear-gradient(to bottom,rgba(255,179,64,0) 0%,rgba(255,179,64,.05) 50%,rgba(255,179,64,0) 100%);
+    animation:scan 8s linear infinite;
+    mix-blend-mode:screen;
+  }
+  @keyframes scan{0%{top:-12%}100%{top:106%}}
+  #hud .lines{
+    position:absolute;inset:0;opacity:.12;
+    background:repeating-linear-gradient(0deg,rgba(255,179,64,.22) 0 1px,transparent 1px 4px);
+  }
+  /* 菱形括角（区别于 L 形） */
+  #hud .corner{position:absolute;width:44px;height:44px;opacity:.75;transform:rotate(45deg)}
+  #hud .corner::before{content:"";position:absolute;inset:0;border:1px solid var(--gold-dim)}
+  #hud .corner::after{content:"";position:absolute;inset:7px;background:rgba(255,179,64,.12);border:1px solid rgba(255,179,64,.18)}
+  #hud .tl{top:26px;left:26px}
+  #hud .tr{top:26px;right:26px}
+  #hud .bl{bottom:26px;left:26px}
+  #hud .br{bottom:26px;right:26px}
+
+  /* ---------- 标题 ---------- */
+  header{
+    position:fixed;top:40px;left:52px;z-index:10;pointer-events:none;
+    text-shadow:0 0 20px rgba(255,179,64,.5);
+  }
+  header .tag{
+    font-size:10px;letter-spacing:.5em;color:var(--ember);opacity:.9;margin-bottom:10px;
+  }
+  header h1{
+    font-family:"Michroma",sans-serif;
+    font-size:clamp(26px,4.2vw,48px);letter-spacing:.18em;font-weight:400;line-height:1;
+    background:linear-gradient(120deg,var(--gold-hot),var(--gold) 55%,#b56a12);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  header p{
+    margin-top:12px;font-size:11px;letter-spacing:.3em;color:var(--gold-soft);
+  }
+  header .bar{
+    margin-top:14px;width:220px;height:1px;
+    background:linear-gradient(90deg,var(--gold),rgba(255,179,64,0));
+    box-shadow:0 0 14px var(--gold);position:relative;
+  }
+  header .bar::after{
+    content:"";position:absolute;left:0;top:-2px;width:5px;height:5px;background:var(--ember);
+    transform:rotate(45deg);box-shadow:0 0 10px var(--ember);
+  }
+
+  /* ---------- 状态（标题下方竖排） ---------- */
+  #stat{
+    position:fixed;left:52px;top:196px;z-index:10;
+    font-size:10px;letter-spacing:.22em;color:var(--gold-soft);
+    line-height:2.1;pointer-events:none;
+  }
+  #stat .s{display:flex;gap:12px;align-items:baseline}
+  #stat .k{opacity:.6}
+  #stat b{color:var(--gold-hot);font-weight:400}
+
+  /* ---------- 控制面板（右下） ---------- */
+  #panel{
+    position:fixed;right:48px;bottom:48px;z-index:10;width:276px;
+    padding:18px 20px 16px;
+    background:linear-gradient(160deg,rgba(30,16,4,.62),rgba(8,5,2,.72));
+    border:1px solid var(--line);
+    border-radius:2px;
+    backdrop-filter:blur(10px) saturate(1.15);
+    box-shadow:0 0 0 1px rgba(255,90,46,.12),0 0 46px rgba(120,60,8,.2) inset,0 12px 44px rgba(0,0,0,.6);
+    transition:opacity .35s,transform .35s;
+  }
+  #panel.hidden{opacity:0;transform:translateY(16px);pointer-events:none}
+  #panel h2{
+    font-family:"Michroma",sans-serif;font-weight:400;
+    font-size:10px;letter-spacing:.34em;color:var(--gold-soft);
+    padding-bottom:12px;margin-bottom:14px;border-bottom:1px dashed var(--line);
+    display:flex;align-items:center;gap:9px;
+  }
+  #panel h2::before{content:"";width:8px;height:8px;background:var(--gold);transform:rotate(45deg);box-shadow:0 0 10px var(--gold);animation:blink 2.4s infinite}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+  .row{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:10.5px;letter-spacing:.1em}
+  .row label{width:66px;color:rgba(255,214,140,.85);flex:none}
+  .row output{width:40px;text-align:right;color:var(--gold-hot);font-size:10px;flex:none}
+  input[type=range]{
+    -webkit-appearance:none;appearance:none;flex:1;height:2px;border-radius:2px;
+    background:linear-gradient(90deg,rgba(255,179,64,.8),rgba(255,179,64,.14));
+    outline:none;cursor:pointer;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;width:11px;height:11px;transform:rotate(45deg);
+    background:var(--gold-hot);box-shadow:0 0 10px var(--gold),0 0 24px rgba(255,179,64,.7);
+  }
+  input[type=range]::-moz-range-thumb{
+    width:11px;height:11px;border:0;transform:rotate(45deg);background:var(--gold-hot);box-shadow:0 0 10px var(--gold);
+  }
+  .btns{display:flex;flex-wrap:wrap;gap:7px;margin-top:16px}
+  button{
+    flex:1 1 auto;min-width:78px;padding:8px 6px;font:inherit;font-size:9.5px;letter-spacing:.16em;
+    color:var(--gold);background:rgba(255,179,64,.06);
+    border:1px solid rgba(255,179,64,.3);border-radius:2px;cursor:pointer;
+    transition:.22s;
+  }
+  button:hover{background:rgba(255,179,64,.18);color:#fff2db;box-shadow:0 0 18px rgba(255,179,64,.4)}
+  button:active{transform:translateY(1px)}
+
+  /* ---------- 提示 ---------- */
+  #hint{
+    position:fixed;bottom:20px;left:0;right:0;text-align:center;z-index:10;
+    font-size:10px;letter-spacing:.2em;color:rgba(255,196,120,.4);pointer-events:none;
+  }
+  #hint kbd{
+    font-family:inherit;color:var(--gold);background:rgba(255,179,64,.1);
+    border:1px solid var(--line);border-radius:2px;padding:1px 6px;margin:0 2px;
+  }
+  #loading{
+    position:fixed;inset:0;z-index:40;display:flex;flex-direction:column;gap:18px;
+    align-items:center;justify-content:center;
+    background:var(--bg);letter-spacing:.3em;font-size:12px;transition:opacity .8s;
+  }
+  #loading .spinner{
+    width:30px;height:30px;border:2px solid rgba(255,179,64,.15);
+    border-top-color:var(--gold);transform:rotate(45deg);animation:spin 1.1s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(405deg)}}
+  #loading.off{opacity:0;pointer-events:none}
+
+  @media (max-width:640px){
+    header{top:30px;left:30px}
+    #stat{left:30px;top:170px}
+    #panel{left:16px;right:16px;bottom:40px;width:auto}
+    #hud .corner{width:30px;height:30px}
+  }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div id="hud">
+  <div class="lines"></div><div class="scan"></div>
+  <div class="corner tl"></div><div class="corner tr"></div>
+  <div class="corner bl"></div><div class="corner br"></div>
+</div>
+<div id="grain"></div>
+
+<header>
+  <div class="tag">MOLTEN LATTICE // ONLINE</div>
+  <h1>HEXFORGE</h1>
+  <p>熔核蜂巢 · 实时 GLSL 能量矩阵</p>
+  <div class="bar"></div>
+</header>
+
+<div id="stat">
+  <div class="s"><span class="k">FPS</span><b id="fps">--</b></div>
+  <div class="s"><span class="k">熔核完整度</span><b id="integrity">100%</b></div>
+  <div class="s"><span class="k">冲击点</span><b id="hits">0</b></div>
+</div>
+
+<div id="panel">
+  <h2>FORGE CONTROL</h2>
+  <div class="row"><label>蜂巢密度</label><input id="sDensity" type="range" min="8" max="46" step="0.5" value="22"><output id="oDensity"></output></div>
+  <div class="row"><label>流动速度</label><input id="sSpeed" type="range" min="0" max="3" step="0.02" value="1"><output id="oSpeed"></output></div>
+  <div class="row"><label>熔核辉光</label><input id="sGlow" type="range" min="0.2" max="2.4" step="0.02" value="1.15"><output id="oGlow"></output></div>
+  <div class="row"><label>色温</label><input id="sHue" type="range" min="0.02" max="0.16" step="0.002" value="0.09"><output id="oHue"></output></div>
+  <div class="row"><label>穹顶曲率</label><input id="sWarp" type="range" min="0" max="1" step="0.01" value="1"><output id="oWarp"></output></div>
+  <div class="btns">
+    <button id="bImpact">熔核冲击</button>
+    <button id="bAuto">自动扰动 · 开</button>
+    <button id="bRotate">自动旋转 · 开</button>
+    <button id="bReset">重置参数</button>
+  </div>
+</div>
+
+<div id="hint">拖动旋转视角 · 滚轮缩放 · 点击产生冲击波 · <kbd>H</kbd> 隐藏面板 · <kbd>空格</kbd> 冲击</div>
+<div id="loading"><div class="spinner"></div><span>点火熔核矩阵 …</span></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls }   from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer }  from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass }      from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass }      from 'three/addons/postprocessing/OutputPass.js';
+
+/* ============================================================
+   参数
+============================================================ */
+const DEF = { density:22, speed:1, glow:1.15, hue:0.09, warp:1 };
+const P   = { ...DEF };
+const DOME_R = 0.72;
+const MAX_HITS = 10;
+
+/* ============================================================
+   渲染器 / 场景 / 相机
+============================================================ */
+const canvas = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(0, 0.9, 5.6);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.rotateSpeed = 0.5;
+controls.minDistance = 2.8;
+controls.maxDistance = 9;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.45;
+controls.enablePan = false;
+
+/* ============================================================
+   全屏背景：穹顶投影熔核蜂巢（六边形流动网格）
+============================================================ */
+const bgUniforms = {
+  uRes      : { value:new THREE.Vector2(1,1) },
+  uTime     : { value:0 },
+  uMouse    : { value:new THREE.Vector2(9,9) },
+  uMouseStr : { value:0 },
+  uDensity  : { value:P.density },
+  uSpeed    : { value:P.speed },
+  uGlow     : { value:P.glow },
+  uHue      : { value:P.hue },
+  uWarp     : { value:P.warp },
+  uHits     : { value:Array.from({length:MAX_HITS},()=>new THREE.Vector4(0,0,-999,0)) }
+};
+
+const bgVert = `
+void main(){
+  gl_Position = vec4(position.xy, 0.999, 1.0);
+}`;
+
+const bgFrag = `
+precision highp float;
+
+uniform vec2  uRes;
+uniform float uTime;
+uniform vec2  uMouse;
+uniform float uMouseStr;
+uniform float uDensity;
+uniform float uSpeed;
+uniform float uGlow;
+uniform float uHue;
+uniform float uWarp;
+uniform vec4  uHits[${MAX_HITS}];
+
+#define PI 3.141592653589793
+#define DR 0.72
+
+vec3 hsv2rgb(vec3 c){
+  vec3 p = abs(fract(c.xxx + vec3(0.0, 2.0/3.0, 1.0/3.0)) * 6.0 - 3.0);
+  return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
+}
+float hash21(vec2 p){
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  f = f*f*(3.0 - 2.0*f);
+  float a = hash21(i);
+  float b = hash21(i + vec2(1.0, 0.0));
+  float c = hash21(i + vec2(0.0, 1.0));
+  float e = hash21(i + vec2(1.0, 1.0));
+  return mix(mix(a,b,f.x), mix(c,e,f.x), f.y);
+}
+float fbm(vec2 p){
+  float s = 0.0, a = 0.5;
+  for(int i=0;i<4;i++){ s += a*vnoise(p); p = p*2.03 + 1.7; a *= 0.5; }
+  return s;
+}
+vec4 hexGrid(vec2 p){
+  vec2 s = vec2(1.0, 1.7320508);
+  vec4 hC = floor(vec4(p, p - vec2(0.5, 1.0)) / s.xyxy) + 0.5;
+  vec4 h  = vec4(p - hC.xy * s, p - (hC.zw + 0.5) * s);
+  return dot(h.xy,h.xy) < dot(h.zw,h.zw) ? vec4(h.xy, hC.xy) : vec4(h.zw, hC.zw + 0.5);
+}
+float hexEdge(vec2 p){
+  p = abs(p);
+  return max(dot(p, normalize(vec2(1.0, 1.7320508))), p.x);
+}
+
+void main(){
+  vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / min(uRes.x, uRes.y);
+
+  /* 球面穹顶投影 */
+  float dRaw = length(uv) / DR;
+  float dc   = clamp(dRaw, 0.0, 1.0);
+  float arc  = asin(dc) / (PI * 0.5);
+  float ang  = atan(uv.y, uv.x);
+  vec2  gp   = mix(uv / DR, vec2(cos(ang), sin(ang)) * arc, uWarp);
+
+  float t   = uTime * uSpeed;
+  float rot = t * 0.05 + 0.12 * sin(t * 0.05);
+  mat2  rm  = mat2(cos(rot), -sin(rot), sin(rot), cos(rot));
+  vec2  grid = rm * gp * uDensity;
+
+  vec4  hx  = hexGrid(grid);
+  float ed  = hexEdge(hx.xy);
+  float aa  = max(fwidth(ed), 1e-4);
+
+  /* 能量涌动流 */
+  float flow = fbm(grid * 0.34 + vec2(-t*0.13, t*0.07));
+  float rnd  = hash21(hx.zw * 1.31 + 5.7);
+
+  /* 发光边缘：能量涌动处更亮 */
+  float edge = smoothstep(0.5 - 0.045 - aa*2.0, 0.5 - 0.045 + aa*2.0, ed);
+  edge *= 0.5 + 0.9 * flow;
+
+  /* 熔融单元填充：局部能量炽热点 */
+  float inner = smoothstep(0.5, 0.16, ed);
+  float ember = smoothstep(0.4, 0.85, flow + 0.5 * sin(t*1.1 + rnd*6.283));
+  ember *= inner * (0.25 + 0.75 * rnd);
+
+  /* 同心能量波前：从中心向外扩散 */
+  float R = length(gp);
+  float wave  = exp(-pow((R - fract(t*0.20)) / 0.055, 2.0));
+  float wave2 = exp(-pow((R - fract(t*0.20 + 0.5)) / 0.085, 2.0)) * 0.55;
+
+  /* 冲击涟漪 */
+  float hit = 0.0;
+  for(int i = 0; i < ${MAX_HITS}; i++){
+    vec4 H = uHits[i];
+    if(H.w <= 0.001) continue;
+    float age = uTime - H.z;
+    if(age < 0.0 || age > 4.0) continue;
+    float dist = length(gp - H.xy);
+    float rr   = age * 0.5;
+    float ring  = exp(-pow((dist - rr) / 0.075, 2.0));
+    float ring2 = exp(-pow((dist - rr * 0.55) / 0.05, 2.0)) * 0.55;
+    hit += (ring + ring2) * exp(-age * 1.1) * H.w;
+    hit += exp(-dist * 9.0) * exp(-age * 3.5) * H.w;
+  }
+
+  /* 鼠标白热聚焦 */
+  float md = length(gp - uMouse);
+  float mg = exp(-md * md * 34.0) * uMouseStr;
+
+  float inside  = 1.0 - smoothstep(1.0, 1.014, dRaw);
+  float halo    = exp(-pow(max(0.0, dRaw - 1.0) / 0.13, 2.0));
+  float rimline = exp(-pow((dRaw - 1.0) / 0.01, 2.0));
+
+  vec3 cMain  = hsv2rgb(vec3(uHue, 0.85, 1.0));
+  vec3 cHot   = hsv2rgb(vec3(fract(uHue + 0.055), 0.30, 1.0));
+  vec3 cEmber = hsv2rgb(vec3(0.03, 0.95, 1.0));   /* 固定红橙冲击色 */
+
+  /* 深炭底色 */
+  float vig = clamp(1.0 - 0.85 * length(uv * vec2(1.0, 1.12)), 0.0, 1.0);
+  vec3 col = mix(vec3(0.020,0.012,0.006), vec3(0.045,0.026,0.012), vig);
+  col += cMain * 0.03 * fbm(uv * 2.4 + vec2(t*0.02, -t*0.015));
+  col += vec3(1.0,0.92,0.72) * pow(hash21(floor(uv * 720.0)), 240.0) * 1.1;
+
+  /* 合成 */
+  vec3 sh = vec3(0.0);
+  sh += cMain  * edge * 1.5;
+  sh += cMain  * ember * 0.55;
+  sh += cHot   * (wave + wave2) * (0.4 + 1.1 * edge) * 0.9;
+  sh += cHot   * mg * (0.4 + 1.5 * edge);
+  sh += cEmber * hit * 2.0;
+
+  col += sh * inside * uGlow;
+  col += cMain * halo * 0.32 * uGlow;
+  col += cHot  * rimline * 1.2 * uGlow;
+
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+const bgMesh = new THREE.Mesh(
+  new THREE.PlaneGeometry(2,2),
+  new THREE.ShaderMaterial({
+    uniforms:bgUniforms, vertexShader:bgVert, fragmentShader:bgFrag,
+    depthWrite:false, depthTest:true
+  })
+);
+bgMesh.frustumCulled = false;
+bgMesh.renderOrder = -10;
+scene.add(bgMesh);
+
+/* ============================================================
+   3D 熔核核心：八面体晶体 + 能量粒子环带
+============================================================ */
+const core = new THREE.Group();
+scene.add(core);
+
+// 内核八面体晶体
+const crystalMat = new THREE.MeshStandardMaterial({
+  color:0x2a1606, metalness:1.0, roughness:0.22,
+  emissive:new THREE.Color(0x7a3d08), emissiveIntensity:1.0, flatShading:true
+});
+const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.74, 0), crystalMat);
+core.add(crystal);
+
+// 八面体线框描边
+const crystalWire = new THREE.LineSegments(
+  new THREE.EdgesGeometry(new THREE.OctahedronGeometry(0.76, 0)),
+  new THREE.LineBasicMaterial({ color:0xffd98a, transparent:true, opacity:0.9 })
+);
+core.add(crystalWire);
+
+// 熔融脉动能量壳
+const shellUniforms = {
+  uTime:{value:0}, uFlash:{value:0},
+  uColor:{value:new THREE.Color().setHSL(P.hue, 0.85, 0.6)}
+};
+const shell = new THREE.Mesh(
+  new THREE.IcosahedronGeometry(1.9, 5),
+  new THREE.ShaderMaterial({
+    uniforms:shellUniforms,
+    transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide,
+    vertexShader:`
+      varying vec3 vN; varying vec3 vW; varying vec3 vP;
+      void main(){
+        vP = position;
+        vec4 wp = modelMatrix * vec4(position, 1.0);
+        vW = wp.xyz;
+        vN = normalize(mat3(modelMatrix) * normal);
+        gl_Position = projectionMatrix * viewMatrix * wp;
+      }`,
+    fragmentShader:`
+      precision highp float;
+      uniform float uTime; uniform float uFlash; uniform vec3 uColor;
+      varying vec3 vN; varying vec3 vW; varying vec3 vP;
+      float h(vec2 p){ p=fract(p*vec2(93.7,71.3)); p+=dot(p,p+27.1); return fract(p.x*p.y); }
+      float vn(vec2 p){
+        vec2 i=floor(p), f=fract(p);
+        f=f*f*(3.0-2.0*f);
+        float a=h(i), b=h(i+vec2(1.0,0.0)), c=h(i+vec2(0.0,1.0)), d=h(i+vec2(1.0,1.0));
+        return mix(mix(a,b,f.x), mix(c,d,f.x), f.y);
+      }
+      void main(){
+        vec3 V = normalize(cameraPosition - vW);
+        float f = pow(1.0 - abs(dot(normalize(vN), V)), 2.6);
+        float m    = smoothstep(0.55, 0.9, vn(vP.xy*2.6 + uTime*0.35));
+        float rise = smoothstep(0.0, 1.0, fract(vP.y*0.55 - uTime*0.14));
+        float a = f*(0.45 + m*0.55 + rise*0.25) + uFlash*(f*1.5 + 0.2);
+        vec3 col = uColor*a*1.7 + vec3(1.0,0.9,0.7)*(m*0.05 + rise*0.04);
+        gl_FragColor = vec4(col, 1.0);
+      }`
+  })
+);
+core.add(shell);
+
+// 能量粒子环带（着色器内沿环流动）
+function makeEnergyRing(radius, speed, tilt, count, hueOff){
+  const g = new THREE.BufferGeometry();
+  const pos = new Float32Array(count*3);
+  const ang = new Float32Array(count);
+  for(let i=0;i<count;i++){
+    const a = (i/count)*Math.PI*2;
+    ang[i] = a;
+    pos[i*3] = Math.cos(a);
+    pos[i*3+1] = 0;
+    pos[i*3+2] = Math.sin(a);
+  }
+  g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  g.setAttribute('aAng', new THREE.BufferAttribute(ang,1));
+  const mat = new THREE.ShaderMaterial({
+    uniforms:{
+      uTime:{value:0}, uRadius:{value:radius}, uSpeed:{value:speed},
+      uColor:{value:new THREE.Color().setHSL(P.hue + hueOff, 0.85, 0.7)}
+    },
+    transparent:true, blending:THREE.AdditiveBlending, depthWrite:false,
+    vertexShader:`
+      attribute float aAng; uniform float uTime; uniform float uRadius; uniform float uSpeed;
+      varying float vA;
+      void main(){
+        float a = aAng + uTime*uSpeed;
+        vec3 p = vec3(cos(a), 0.0, sin(a)) * uRadius;
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        vA = 0.45 + 0.55*sin(uTime*3.0 + aAng*7.0);
+        gl_PointSize = (2.0 + vA*2.4) * (240.0 / -mv.z);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader:`
+      precision highp float; uniform vec3 uColor; varying float vA;
+      void main(){
+        float d = length(gl_PointCoord - 0.5);
+        if(d > 0.5) discard;
+        float a = smoothstep(0.5, 0.0, d);
+        gl_FragColor = vec4(uColor * a * vA * 2.0, a);
+      }`
+  });
+  const pts = new THREE.Points(g, mat);
+  pts.rotation.set(tilt[0], tilt[1], tilt[2]);
+  pts.userData.mat = mat;
+  return pts;
+}
+const rings = [
+  makeEnergyRing(1.15,  0.9, [0, 0, 0],        340, 0.0),
+  makeEnergyRing(1.52, -0.6, [0.9, 0, 0.3],    360, 0.015),
+  makeEnergyRing(1.88,  0.45,[-0.7, 0, -0.4],  380, -0.012)
+];
+rings.forEach(r => core.add(r));
+
+// 稀疏外层粒子
+const PN = 700;
+const pPos = new Float32Array(PN*3), pSeed = new Float32Array(PN);
+for(let i=0;i<PN;i++){
+  const r = 1.3 + Math.random()*2.9;
+  const th = Math.random()*Math.PI*2, ph = Math.acos(2*Math.random()-1);
+  pPos[i*3]   = r*Math.sin(ph)*Math.cos(th);
+  pPos[i*3+1] = r*Math.cos(ph)*0.7;
+  pPos[i*3+2] = r*Math.sin(ph)*Math.sin(th);
+  pSeed[i] = Math.random();
+}
+const pGeo = new THREE.BufferGeometry();
+pGeo.setAttribute('position', new THREE.BufferAttribute(pPos,3));
+pGeo.setAttribute('aSeed', new THREE.BufferAttribute(pSeed,1));
+const particles = new THREE.Points(pGeo, new THREE.ShaderMaterial({
+  uniforms:{ uTime:{value:0}, uColor:{value:new THREE.Color().setHSL(P.hue,0.75,0.78)} },
+  transparent:true, blending:THREE.AdditiveBlending, depthWrite:false,
+  vertexShader:`
+    attribute float aSeed; uniform float uTime; varying float vA;
+    void main(){
+      vec3 p = position;
+      p.y += sin(uTime*0.6 + aSeed*22.0)*0.16;
+      vec4 mv = modelViewMatrix * vec4(p,1.0);
+      vA = 0.35 + 0.65*abs(sin(uTime*1.6 + aSeed*40.0));
+      gl_PointSize = (1.2 + aSeed*2.4) * (260.0 / -mv.z);
+      gl_Position = projectionMatrix * mv;
+    }`,
+  fragmentShader:`
+    precision highp float; uniform vec3 uColor; varying float vA;
+    void main(){
+      float d = length(gl_PointCoord - 0.5);
+      if(d > 0.5) discard;
+      float a = smoothstep(0.5, 0.0, d);
+      gl_FragColor = vec4(uColor * a * vA * 1.7, a);
+    }`
+}));
+core.add(particles);
+
+/* 灯光 */
+scene.add(new THREE.AmbientLight(0x3a2410, 1.2));
+const l1 = new THREE.PointLight(0xffb340, 60, 24, 2); l1.position.set(3,3,3);  scene.add(l1);
+const l2 = new THREE.PointLight(0xff5a2e, 30, 24, 2); l2.position.set(-3.4,-1.6,2.2); scene.add(l2);
+const l3 = new THREE.DirectionalLight(0xffe6c0, 1.0); l3.position.set(-1,2,-3); scene.add(l3);
+
+/* ============================================================
+   后处理
+============================================================ */
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.85, 0.62, 0.55);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+/* ============================================================
+   交互
+============================================================ */
+let hitIdx = 0, hitCount = 0, integrity = 100;
+const clock = new THREE.Clock();
+
+function screenToDome(px, py){
+  const m = Math.min(innerWidth, innerHeight);
+  const ux = (px - innerWidth/2)/m, uy = (py - innerHeight/2)/m;
+  const d = Math.hypot(ux, uy)/DOME_R;
+  const dc = Math.min(d, 1);
+  const arc = Math.asin(dc)/(Math.PI/2);
+  const ang = Math.atan2(uy, ux);
+  const dx = Math.cos(ang)*arc, dy = Math.sin(ang)*arc;
+  const fx = ux/DOME_R, fy = uy/DOME_R;
+  return [ fx*(1-P.warp) + dx*P.warp, fy*(1-P.warp) + dy*P.warp ];
+}
+
+function addHit(gx, gy, strength = 1){
+  const h = bgUniforms.uHits.value[hitIdx % MAX_HITS];
+  h.set(gx, gy, bgUniforms.uTime.value, strength);
+  hitIdx++;
+  hitCount++;
+  shellUniforms.uFlash.value = Math.min(1.4, shellUniforms.uFlash.value + 0.9*strength);
+  integrity = Math.max(42, integrity - 1.6*strength);
+  document.getElementById('hits').textContent = hitCount;
+}
+
+function randomHit(){
+  const a = Math.random()*Math.PI*2, r = Math.pow(Math.random(), .6)*0.92;
+  addHit(Math.cos(a)*r, Math.sin(a)*r, 0.6 + Math.random()*0.6);
+}
+
+const mouseTarget = new THREE.Vector2(9,9);
+let mouseActive = 0, parallax = new THREE.Vector2();
+
+function onPointer(e){
+  const y = innerHeight - e.clientY;
+  const g = screenToDome(e.clientX, y);
+  mouseTarget.set(g[0], g[1]);
+  mouseActive = 1;
+  parallax.set((e.clientX/innerWidth - 0.5), (e.clientY/innerHeight - 0.5));
+}
+addEventListener('pointermove', onPointer, { passive:true });
+addEventListener('pointerleave', ()=> mouseActive = 0);
+renderer.domElement.addEventListener('pointerdown', e=>{
+  const g = screenToDome(e.clientX, innerHeight - e.clientY);
+  addHit(g[0], g[1], 1.25);
+});
+
+/* 面板绑定 */
+const ui = {
+  density:['sDensity','oDensity', v=>v.toFixed(1)],
+  speed  :['sSpeed','oSpeed',   v=>v.toFixed(2)],
+  glow   :['sGlow','oGlow',     v=>v.toFixed(2)],
+  hue    :['sHue','oHue',       v=>Math.round(v*360)+'°'],
+  warp   :['sWarp','oWarp',     v=>v.toFixed(2)]
+};
+function syncUI(){
+  for(const k in ui){
+    const [si, oi, fmt] = ui[k];
+    const s = document.getElementById(si);
+    s.value = P[k];
+    document.getElementById(oi).textContent = fmt(P[k]);
+  }
+  bgUniforms.uDensity.value = P.density;
+  bgUniforms.uSpeed.value   = P.speed;
+  bgUniforms.uGlow.value    = P.glow;
+  bgUniforms.uHue.value     = P.hue;
+  bgUniforms.uWarp.value    = P.warp;
+
+  const c = new THREE.Color().setHSL(P.hue, 0.85, 0.62);
+  shellUniforms.uColor.value.copy(c);
+  crystalMat.emissive.copy(new THREE.Color().setHSL(P.hue, 0.95, 0.26));
+  crystalWire.material.color.copy(new THREE.Color().setHSL(P.hue, 0.8, 0.78));
+  particles.material.uniforms.uColor.value.copy(new THREE.Color().setHSL(P.hue, 0.75, 0.8));
+  rings.forEach((r, i) => {
+    const off = [0.0, 0.015, -0.012][i];
+    r.userData.mat.uniforms.uColor.value.copy(new THREE.Color().setHSL(P.hue + off, 0.85, 0.7));
+  });
+  l1.color.copy(c);
+  document.documentElement.style.setProperty('--gold', '#'+c.clone().offsetHSL(0,0,0.1).getHexString());
+}
+for(const k in ui){
+  document.getElementById(ui[k][0]).addEventListener('input', e=>{
+    P[k] = parseFloat(e.target.value); syncUI();
+  });
+}
+let autoPerturb = true, panelHidden = false;
+document.getElementById('bImpact').onclick = ()=> randomHit();
+document.getElementById('bAuto').onclick = e=>{
+  autoPerturb = !autoPerturb;
+  e.target.textContent = '自动扰动 · ' + (autoPerturb ? '开' : '关');
+};
+document.getElementById('bRotate').onclick = e=>{
+  controls.autoRotate = !controls.autoRotate;
+  e.target.textContent = '自动旋转 · ' + (controls.autoRotate ? '开' : '关');
+};
+document.getElementById('bReset').onclick = ()=>{ Object.assign(P, DEF); syncUI(); };
+addEventListener('keydown', e=>{
+  if(e.key === 'h' || e.key === 'H'){
+    panelHidden = !panelHidden;
+    document.getElementById('panel').classList.toggle('hidden', panelHidden);
+  }
+  if(e.code === 'Space'){ e.preventDefault(); randomHit(); }
+});
+syncUI();
+
+/* ============================================================
+   自适应
+============================================================ */
+function resize(){
+  const w = innerWidth, h = innerHeight;
+  camera.aspect = w/h; camera.updateProjectionMatrix();
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+  renderer.setSize(w, h);
+  composer.setSize(w, h);
+  bloom.setSize(w, h);
+  const dw = renderer.domElement.width, dh = renderer.domElement.height;
+  bgUniforms.uRes.value.set(dw, dh);
+}
+addEventListener('resize', resize);
+resize();
+
+let paused = false;
+document.addEventListener('visibilitychange', ()=> paused = document.hidden);
+
+/* ============================================================
+   主循环
+============================================================ */
+let nextHit = 2.2, frames = 0, fpsT = performance.now();
+const fpsEl = document.getElementById('fps'), intEl = document.getElementById('integrity');
+
+function tick(){
+  requestAnimationFrame(tick);
+  if(paused) return;
+
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t  = clock.elapsedTime;
+
+  bgUniforms.uTime.value = t;
+  shellUniforms.uTime.value = t;
+  particles.material.uniforms.uTime.value = t;
+  rings.forEach(r => r.userData.mat.uniforms.uTime.value = t);
+
+  bgUniforms.uMouse.value.lerp(mouseTarget, 0.12);
+  bgUniforms.uMouseStr.value += ((mouseActive ? 1 : 0) - bgUniforms.uMouseStr.value) * 0.08;
+
+  shellUniforms.uFlash.value *= Math.pow(0.06, dt);
+  integrity = Math.min(100, integrity + dt*4.2);
+  intEl.textContent = integrity.toFixed(0) + '%';
+
+  if(autoPerturb){
+    nextHit -= dt;
+    if(nextHit <= 0){ randomHit(); nextHit = 2 + Math.random()*4; }
+  }
+
+  crystal.rotation.y += dt*0.5; crystal.rotation.x += dt*0.22;
+  crystalWire.rotation.copy(crystal.rotation);
+  rings.forEach(r => { r.rotation.y += dt*0.08; });
+  particles.rotation.y -= dt*0.05;
+  const pulse = 1 + Math.sin(t*1.3)*0.012 + shellUniforms.uFlash.value*0.02;
+  shell.scale.setScalar(pulse);
+  crystalMat.emissiveIntensity = 0.8 + Math.sin(t*2.4)*0.3 + shellUniforms.uFlash.value*0.6;
+  l2.position.set(Math.cos(t*0.5)*3.6, -1.4, Math.sin(t*0.5)*3.6);
+
+  core.position.x += (-parallax.x*0.42 - core.position.x)*0.05;
+  core.position.y += ( parallax.y*0.32 - core.position.y)*0.05;
+
+  controls.update();
+  composer.render();
+
+  frames++;
+  const now = performance.now();
+  if(now - fpsT > 500){
+    fpsEl.textContent = Math.round(frames*1000/(now - fpsT));
+    frames = 0; fpsT = now;
+  }
+}
+tick();
+
+setTimeout(()=> document.getElementById('loading').classList.add('off'), 350);
+</script>
+</body>
+</html>
