@@ -1,0 +1,10 @@
+# agent / project metadata (internal, not part of the published site)
+.workbuddy/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.log

@@ -1,0 +1,1276 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<!-- [闪屏修复 1/8] 关键内联底色：必须排在所有外链样式（字体）之前，
+     否则样式表到达前浏览器会先铺一层默认白底，这就是"打开瞬间白闪一下" -->
+<style>html,body{margin:0;padding:0;background:#080502}html{color-scheme:dark}</style>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="theme-color" content="#080502" />
+<title>HEXFORGE // 熔核蜂巢矩阵</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<!-- [黑闪修复·续] 字体样式表改为「非阻塞」加载。
+     原来 rel="stylesheet" 是阻塞渲染的：浏览器会一直不画首帧，等这个跨域请求回来
+     才第一次上屏。字体源在国外，等待期间用户看到的是浏览器默认白底，
+     等到了才"啪"地变成深色 —— 打开瞬间的那一下闪就是这个。
+     现在改成 preload + onload 换 rel：首帧立刻用内联底色画出来，字体晚到只影响字形，
+     不再影响"什么时候开始画"。 -->
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Michroma&family=Share+Tech+Mono&display=swap"
+      onload="this.onload=null;this.rel='stylesheet'" />
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Michroma&family=Share+Tech+Mono&display=swap" /></noscript>
+<style>
+  :root{
+    --gold:#ffb340;
+    --gold-hot:#ffe0a3;
+    --gold-dim:rgba(255,179,64,.5);
+    --gold-soft:rgba(255,214,140,.72);
+    --ember:#ff5a2e;
+    --bg:#080502;
+    --line:rgba(255,179,64,.24);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:100%;height:100%;overflow:hidden;background:#080502;}
+  html{background:#080502;color-scheme:dark;}
+  body{
+    font-family:"Share Tech Mono",ui-monospace,Menlo,Consolas,"PingFang SC","Microsoft YaHei",monospace;
+    color:var(--gold);
+    -webkit-font-smoothing:antialiased;
+    cursor:crosshair;
+    /* [闪屏修复 2/8] 建立独立层叠上下文，把 DOM 叠层与 WebGL 画布的合成彻底隔开 */
+    isolation:isolate;
+  }
+  /* [闪屏修复 3/8] 画布永远保持不透明。
+     用 opacity 过渡去揭示 WebGL 画布，等于让 GPU 每帧合成一个半透明 WebGL 层，
+     在部分驱动/分屏缩放（125%/150%）下会出现黑闪或亮度跳变。
+     首屏遮挡改为交给 #loading 遮罩做交叉淡出。 */
+  canvas#gl{position:fixed;inset:0;display:block;width:100%;height:100%;background:#080502;}
+
+  /* ---------- 颗粒覆盖 ---------- */
+  #grain{
+    position:fixed;inset:0;z-index:6;pointer-events:none;opacity:.06;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");
+    /* 静态覆盖层：不使用 mix-blend-mode，避免每帧重算混合导致的闪烁 */
+    background-repeat:repeat;
+    transform:translateZ(0);
+    backface-visibility:hidden;
+  }
+
+  /* ---------- HUD ---------- */
+  #hud{position:fixed;inset:0;pointer-events:none;z-index:5;
+    contain:layout style;
+  }
+  #hud .scan{
+    position:absolute;left:0;right:0;height:120px;
+    background:linear-gradient(to bottom,rgba(255,179,64,0) 0%,rgba(255,179,64,.05) 50%,rgba(255,179,64,0) 100%);
+    /* 用 transform 驱动动画（合成层，不触发重绘），替代 top 位移 */
+    animation:scan 8s linear infinite;
+    will-change:transform;
+  }
+  @keyframes scan{0%{transform:translateY(-12vh)}100%{transform:translateY(106vh)}}
+  #hud .lines{
+    position:absolute;inset:0;opacity:.12;
+    background:repeating-linear-gradient(0deg,rgba(255,179,64,.22) 0 1px,transparent 1px 4px);
+    /* [闪屏修复 4/8] 钉到独立合成层：否则相邻的 .scan 每帧位移会带着它一起重绘，
+       在非整数 DPR（Windows 125%/150% 缩放）下表现为细密条纹抖动 */
+    transform:translateZ(0);
+  }
+  /* 菱形括角（区别于 L 形） */
+  #hud .corner{position:absolute;width:44px;height:44px;opacity:.75;transform:rotate(45deg)}
+  #hud .corner::before{content:"";position:absolute;inset:0;border:1px solid var(--gold-dim)}
+  #hud .corner::after{content:"";position:absolute;inset:7px;background:rgba(255,179,64,.12);border:1px solid rgba(255,179,64,.18)}
+  #hud .tl{top:26px;left:26px}
+  #hud .tr{top:26px;right:26px}
+  #hud .bl{bottom:26px;left:26px}
+  #hud .br{bottom:26px;right:26px}
+
+  /* ---------- 标题 ---------- */
+  header{
+    position:fixed;top:40px;left:52px;z-index:10;pointer-events:none;
+    text-shadow:0 0 20px rgba(255,179,64,.5);
+    contain:layout style paint;
+  }
+  header .tag{
+    font-size:10px;letter-spacing:.5em;color:var(--ember);opacity:.9;margin-bottom:10px;
+  }
+  header h1{
+    font-family:"Michroma",sans-serif;
+    font-size:clamp(26px,4.2vw,48px);letter-spacing:.18em;font-weight:400;line-height:1;
+    background:linear-gradient(120deg,var(--gold-hot),var(--gold) 55%,#b56a12);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  header p{
+    margin-top:12px;font-size:11px;letter-spacing:.3em;color:var(--gold-soft);
+  }
+  header .bar{
+    margin-top:14px;width:220px;height:1px;
+    background:linear-gradient(90deg,var(--gold),rgba(255,179,64,0));
+    box-shadow:0 0 14px var(--gold);position:relative;
+  }
+  header .bar::after{
+    content:"";position:absolute;left:0;top:-2px;width:5px;height:5px;background:var(--ember);
+    transform:rotate(45deg);box-shadow:0 0 10px var(--ember);
+  }
+
+  /* ---------- 状态（标题下方竖排） ---------- */
+  #stat{
+    position:fixed;left:52px;top:196px;z-index:10;
+    font-size:10px;letter-spacing:.22em;color:var(--gold-soft);
+    line-height:2.1;pointer-events:none;
+    contain:layout style paint;
+  }
+  #stat .s{display:flex;gap:12px;align-items:baseline}
+  #stat .k{opacity:.6}
+  #stat b{color:var(--gold-hot);font-weight:400}
+
+  /* ---------- 控制面板（右下） ---------- */
+  #panel{
+    position:fixed;right:48px;bottom:48px;z-index:10;width:276px;
+    padding:18px 20px 16px;
+    background:linear-gradient(160deg,rgba(30,16,4,.82),rgba(8,5,2,.9));
+    border:1px solid var(--line);
+    border-radius:2px;
+    /* 不使用 backdrop-filter：它每帧重采样动画画布，是交互闪屏的主要来源之一 */
+    box-shadow:0 0 0 1px rgba(255,90,46,.12),0 12px 44px rgba(0,0,0,.6);
+    transition:opacity .35s,transform .35s;
+    transform:translateZ(0);
+    backface-visibility:hidden;
+    contain:layout style paint;
+  }
+  #panel.hidden{opacity:0;transform:translateY(16px);pointer-events:none}
+  #panel h2{
+    font-family:"Michroma",sans-serif;font-weight:400;
+    font-size:10px;letter-spacing:.34em;color:var(--gold-soft);
+    padding-bottom:12px;margin-bottom:14px;border-bottom:1px dashed var(--line);
+    display:flex;align-items:center;gap:9px;
+  }
+  #panel h2::before{content:"";width:8px;height:8px;background:var(--gold);transform:rotate(45deg);box-shadow:0 0 10px var(--gold);animation:blink 2.4s infinite}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+  .row{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:10.5px;letter-spacing:.1em}
+  .row label{width:66px;color:rgba(255,214,140,.85);flex:none}
+  .row output{width:40px;text-align:right;color:var(--gold-hot);font-size:10px;flex:none}
+  input[type=range]{
+    -webkit-appearance:none;appearance:none;flex:1;height:2px;border-radius:2px;
+    background:linear-gradient(90deg,rgba(255,179,64,.8),rgba(255,179,64,.14));
+    outline:none;cursor:pointer;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;width:11px;height:11px;transform:rotate(45deg);
+    background:var(--gold-hot);box-shadow:0 0 10px var(--gold),0 0 24px rgba(255,179,64,.7);
+  }
+  input[type=range]::-moz-range-thumb{
+    width:11px;height:11px;border:0;transform:rotate(45deg);background:var(--gold-hot);box-shadow:0 0 10px var(--gold);
+  }
+  .btns{display:flex;flex-wrap:wrap;gap:7px;margin-top:16px}
+  button{
+    flex:1 1 auto;min-width:78px;padding:8px 6px;font:inherit;font-size:9.5px;letter-spacing:.16em;
+    color:var(--gold);background:rgba(255,179,64,.06);
+    border:1px solid rgba(255,179,64,.3);border-radius:2px;cursor:pointer;
+    transition:.22s;
+  }
+  button:hover{background:rgba(255,179,64,.18);color:#fff2db;box-shadow:0 0 18px rgba(255,179,64,.4)}
+  button:active{transform:translateY(1px)}
+
+  /* ---------- 提示 ---------- */
+  #hint{
+    position:fixed;bottom:20px;left:0;right:0;text-align:center;z-index:10;
+    font-size:10px;letter-spacing:.2em;color:rgba(255,196,120,.4);pointer-events:none;
+  }
+  #hint kbd{
+    font-family:inherit;color:var(--gold);background:rgba(255,179,64,.1);
+    border:1px solid var(--line);border-radius:2px;padding:1px 6px;margin:0 2px;
+  }
+
+  /* ---------- 加载遮罩（首屏交叉淡出，全程不闪） ---------- */
+  #loading{
+    position:fixed;inset:0;z-index:40;display:flex;flex-direction:column;gap:18px;
+    align-items:center;justify-content:center;
+    background:#080502;letter-spacing:.3em;font-size:12px;
+    /* 只过渡 opacity；visibility 延迟到淡出结束再切换，
+       否则遮罩会“瞬移”消失，看着就是闪一下 */
+    transition:opacity .55s ease;
+  }
+  #loading .spinner{
+    width:30px;height:30px;border:2px solid rgba(255,179,64,.15);
+    border-top-color:var(--gold);transform:rotate(45deg);animation:spin 1.1s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(405deg)}}
+  #loading.off{
+    opacity:0;visibility:hidden;pointer-events:none;
+    transition:opacity .55s ease,visibility 0s linear .55s;
+  }
+  #loading .retry{
+    display:none;margin-top:4px;padding:8px 18px;
+    font:inherit;font-size:10px;letter-spacing:.2em;
+    color:var(--gold);background:rgba(255,179,64,.08);
+    border:1px solid rgba(255,179,64,.35);border-radius:2px;cursor:pointer;
+  }
+  #loading.fail .retry{display:inline-block}
+  #loading.fail .spinner{animation-duration:3s;opacity:.5}
+
+  /* [闪屏修复 5/8] 尊重系统"减少动态效果"：关掉扫描光带等全屏扫动元素 */
+  @media (prefers-reduced-motion: reduce){
+    #hud .scan{display:none}
+    #loading .spinner{animation-duration:2.4s}
+  }
+
+  @media (max-width:640px){
+    header{top:30px;left:30px}
+    #stat{left:30px;top:170px}
+    #panel{left:16px;right:16px;bottom:40px;width:auto}
+    #hud .corner{width:30px;height:30px}
+  }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div id="hud">
+  <div class="lines"></div><div class="scan"></div>
+  <div class="corner tl"></div><div class="corner tr"></div>
+  <div class="corner bl"></div><div class="corner br"></div>
+</div>
+<div id="grain"></div>
+
+<header>
+  <div class="tag">MOLTEN LATTICE // ONLINE</div>
+  <h1>HEXFORGE</h1>
+  <p>熔核蜂巢 · 实时 GLSL 能量矩阵</p>
+  <div class="bar"></div>
+</header>
+
+<div id="stat">
+  <div class="s"><span class="k">FPS</span><b id="fps">--</b></div>
+  <div class="s"><span class="k">熔核完整度</span><b id="integrity">100%</b></div>
+  <div class="s"><span class="k">冲击点</span><b id="hits">0</b></div>
+</div>
+
+<div id="panel">
+  <h2>FORGE CONTROL</h2>
+  <div class="row"><label>蜂巢密度</label><input id="sDensity" type="range" min="8" max="46" step="0.5" value="22"><output id="oDensity"></output></div>
+  <div class="row"><label>流动速度</label><input id="sSpeed" type="range" min="0" max="3" step="0.02" value="1"><output id="oSpeed"></output></div>
+  <div class="row"><label>熔核辉光</label><input id="sGlow" type="range" min="0.2" max="2.4" step="0.02" value="1.15"><output id="oGlow"></output></div>
+  <div class="row"><label>色温</label><input id="sHue" type="range" min="0.02" max="0.16" step="0.002" value="0.09"><output id="oHue"></output></div>
+  <div class="row"><label>穹顶曲率</label><input id="sWarp" type="range" min="0" max="1" step="0.01" value="1"><output id="oWarp"></output></div>
+  <div class="btns">
+    <button id="bImpact">熔核冲击</button>
+    <button id="bAuto">自动扰动 · 开</button>
+    <button id="bRotate">自动旋转 · 开</button>
+    <button id="bReset">重置参数</button>
+  </div>
+</div>
+
+<div id="hint">拖动旋转视角 · 滚轮缩放 · 点击产生冲击波 · <kbd>H</kbd> 隐藏面板 · <kbd>空格</kbd> 冲击</div>
+<div id="loading"><div class="spinner"></div><span id="ltxt">点火熔核矩阵 …</span><button id="lretry" class="retry" type="button">更换镜像源重试</button></div>
+<noscript><div style="position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:#080502;color:#ffb340;letter-spacing:.3em;font-size:12px">需要启用 JavaScript 才能运行熔核矩阵</div></noscript>
+
+<!-- ============================================================
+     [闪屏修复 6/8] 依赖加载：可换源的 importmap + 看门狗
+     原来是硬编码 unpkg：国内经常连不上，遮罩会一直转，
+     4 秒兜底又把还没渲染的黑色画布揭出来 —— 于是"黑闪一下 + 后到画面再闪一下"。
+     现在优先走国内镜像，加载失败自动换源，全失败则给出提示而不是黑屏。
+============================================================ -->
+<script>
+(function () {
+  var VER  = '0.160.0';
+  var CDNS = [
+    'https://registry.npmmirror.com/three/' + VER + '/files/',  /* 国内镜像，首选 */
+    'https://unpkg.com/three@' + VER + '/',
+    'https://cdn.jsdelivr.net/npm/three@' + VER + '/'
+  ];
+  var idx = 0;
+  try {
+    idx = parseInt(sessionStorage.getItem('hf.cdn') || '0', 10);
+    if (!(idx >= 0 && idx < CDNS.length)) idx = 0;
+  } catch (e) { idx = 0; }
+
+  window.__HF__ = { VER: VER, CDNS: CDNS, idx: idx };
+
+  /* 此刻还没有任何模块被加载，注入 importmap 是安全的 */
+  var im = document.createElement('script');
+  im.type = 'importmap';
+  im.textContent = JSON.stringify({
+    imports: {
+      'three'         : CDNS[idx] + 'build/three.module.js',
+      'three/addons/': CDNS[idx] + 'examples/jsm/'
+    }
+  });
+  document.head.appendChild(im);
+
+  function fail(msg) {
+    var box = document.getElementById('loading');
+    var txt = document.getElementById('ltxt');
+    var btn = document.getElementById('lretry');
+    if (txt) txt.textContent = msg;
+    if (box) { box.classList.add('fail'); box.classList.remove('off'); box.style.display = ''; }
+    if (btn && !btn.__bound) {
+      btn.__bound = 1;
+      btn.addEventListener('click', function () {
+        var n = (window.__HF__.idx + 1) % CDNS.length;
+        try { sessionStorage.setItem('hf.cdn', String(n)); } catch (e) {}
+        location.reload();
+      });
+    }
+  }
+
+  /* 看门狗：主模块迟迟没启动（所有 import 就绪后才会有信号），说明这一源不可用。
+     超时给得比较宽松，避免慢网被误判成失败。 */
+  setTimeout(function () {
+    if (window.__HF_MODULE__) return;
+    if (navigator.onLine === false) { fail('当前似乎已离线，请检查网络后重试'); return; }
+    if (idx + 1 < CDNS.length) {
+      try { sessionStorage.setItem('hf.cdn', String(idx + 1)); } catch (e) {}
+      var txt = document.getElementById('ltxt');
+      if (txt) txt.textContent = '镜像源不可用，正在切换 …';
+      location.reload();
+    } else {
+      fail('资源加载失败，请检查网络后刷新');
+    }
+  }, 10000);
+})();
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls }   from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer }  from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass }      from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass }      from 'three/addons/postprocessing/OutputPass.js';
+
+/* 依赖全部就绪的信号（见上面的看门狗） */
+window.__HF_MODULE__ = 1;
+
+/* 加载失败提示（WebGL 不可用、渲染异常等情况） */
+function showLoadError(msg){
+  const box = document.getElementById('loading');
+  const txt = document.getElementById('ltxt');
+  const btn = document.getElementById('lretry');
+  if(txt) txt.textContent = msg;
+  if(box){ box.classList.add('fail'); box.classList.remove('off'); box.style.display = ''; }
+  /* 这里也要把重试按钮接上，否则只有 CDN 那条路径失败时按钮才可用 */
+  if(btn && !btn.__bound){
+    btn.__bound = 1;
+    btn.textContent = '重新加载';
+    btn.addEventListener('click', ()=> location.reload());
+  }
+}
+
+/* ============================================================
+   参数
+============================================================ */
+const DEF = { density:22, speed:1, glow:1.15, hue:0.09, warp:1 };
+const P   = { ...DEF };
+const DOME_R = 0.72;
+const MAX_HITS = 10;
+const REDUCE_MOTION = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ============================================================
+   渲染器 / 场景 / 相机
+============================================================ */
+const canvas = document.getElementById('gl');
+let renderer;
+try{
+  /* [黑闪修复·续·关键] preserveDrawingBuffer:true
+     ------------------------------------------------------------------
+     默认是 false：每一帧被浏览器合成之后，绘图缓冲的内容就变成"未定义"。
+     只要浏览器在页面没有重新渲染的情况下再合成一次这个标签页，读到的就是空缓冲
+     —— 直接表现为整屏纯黑。会触发"再合成一次"的情况非常多，而且都不是页面能
+     单方面拦住的：
+       · 切到别的标签页再切回来 / 窗口被别的窗口挡住又露出来 / 最小化再还原
+       · 显示器休眠唤醒、改分辨率、切独显、走 RDP/投屏
+       · 浏览器合成器自己重启、打印预览、系统缩放变化
+     这些情况下页面来不及（也来不及在合成之前）重画，于是就是"黑闪一下"。
+     打开它之后，上一帧的内容会被保留，浏览器无论何时重新合成都拿得到正确画面，
+     这一整类黑帧就从根上没有了。
+     代价是每帧多一次整屏拷贝（本页 1080p 级别约 8MB/帧，相对这个页面的
+     fbm + bloom 着色开销可以忽略）。要的是"绝不黑"，这个代价值得。 */
+  renderer = new THREE.WebGLRenderer({
+    canvas, antialias:true, powerPreference:'high-performance',
+    preserveDrawingBuffer:true
+  });
+}catch(err){
+  showLoadError('无法初始化 WebGL，请更换浏览器或开启硬件加速');
+  throw err;
+}
+/* 清屏色也用页面底色：万一还有哪条路径漏出一帧"只清了屏没画内容"，
+   露出来的也是这个页面的深棕底，而不是刺眼的纯黑。 */
+renderer.setClearColor(0x080502, 1);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+/* 上下文丢失（切换独显/休眠唤醒/驱动重置）会让画面整屏变黑。
+   这里先把默认行为拦掉，上下文才有机会恢复；完整的"盖遮罩 + 重建后处理链路 +
+   预热后重新揭幕"逻辑在文件末尾（需要用到尚未初始化的对象，所以放在后面注册）。 */
+canvas.addEventListener('webglcontextlost', e => e.preventDefault(), false);
+
+const scene  = new THREE.Scene();
+/* [黑闪修复·续] 场景底色与页面底色一致。
+   RenderPass 清屏时会用它（而不是渲染器默认的纯黑），
+   于是任何"只清屏、还没画内容"的瞬间也是品牌深棕底，不再是刺眼黑帧。 */
+scene.background = new THREE.Color(0x080502);
+const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(0, 0.9, 5.6);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.rotateSpeed = 0.5;
+controls.minDistance = 2.8;
+controls.maxDistance = 9;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.45;
+controls.enablePan = false;
+
+/* ============================================================
+   全屏背景：穹顶投影熔核蜂巢（六边形流动网格）
+============================================================ */
+const bgUniforms = {
+  uRes      : { value:new THREE.Vector2(1,1) },
+  uTime     : { value:0 },          /* 已按"流动速度"积分过的时间，见主循环 */
+  uMouse    : { value:new THREE.Vector2(9,9) },
+  uMouseStr : { value:0 },
+  uDensity  : { value:P.density },
+  uGlow     : { value:P.glow },
+  uHue      : { value:P.hue },
+  uWarp     : { value:P.warp },
+  uHits     : { value:Array.from({length:MAX_HITS},()=>new THREE.Vector4(0,0,-999,0)) }
+};
+
+const bgVert = `
+void main(){
+  gl_Position = vec4(position.xy, 0.999, 1.0);
+}`;
+
+const bgFrag = `
+precision highp float;
+
+uniform vec2  uRes;
+uniform float uTime;
+uniform vec2  uMouse;
+uniform float uMouseStr;
+uniform float uDensity;
+uniform float uGlow;
+uniform float uHue;
+uniform float uWarp;
+uniform vec4  uHits[${MAX_HITS}];
+
+#define PI 3.141592653589793
+#define DR 0.72
+
+vec3 hsv2rgb(vec3 c){
+  vec3 p = abs(fract(c.xxx + vec3(0.0, 2.0/3.0, 1.0/3.0)) * 6.0 - 3.0);
+  return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
+}
+float hash21(vec2 p){
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  f = f*f*(3.0 - 2.0*f);
+  float a = hash21(i);
+  float b = hash21(i + vec2(1.0, 0.0));
+  float c = hash21(i + vec2(0.0, 1.0));
+  float e = hash21(i + vec2(1.0, 1.0));
+  return mix(mix(a,b,f.x), mix(c,e,f.x), f.y);
+}
+/* [闪屏修复 8/8] 逐倍频做像素足迹消隐。
+   当某个倍频的噪声周期细到不足约 2 像素（高密度 + 小窗口时会出现）时，
+   它既画不出细节、又会在每帧采样位置变化时乱闪 —— 直接把这层权重压到 0。
+   默认参数下所有倍频都在阈值以上，画面观感不变。 */
+float fbm(vec2 p){
+  float s = 0.0, a = 0.5;
+  for(int i=0;i<4;i++){
+    float px = max(fwidth(p.x), fwidth(p.y));
+    float k  = 1.0 - smoothstep(0.28, 0.55, px);
+    s += a * k * vnoise(p);
+    p = p*2.03 + 1.7;
+    a *= 0.5;
+  }
+  return s;
+}
+vec4 hexGrid(vec2 p){
+  vec2 s = vec2(1.0, 1.7320508);
+  vec4 hC = floor(vec4(p, p - vec2(0.5, 1.0)) / s.xyxy) + 0.5;
+  vec4 h  = vec4(p - hC.xy * s, p - (hC.zw + 0.5) * s);
+  return dot(h.xy,h.xy) < dot(h.zw,h.zw) ? vec4(h.xy, hC.xy) : vec4(h.zw, hC.zw + 0.5);
+}
+float hexEdge(vec2 p){
+  p = abs(p);
+  return max(dot(p, normalize(vec2(1.0, 1.7320508))), p.x);
+}
+
+void main(){
+  vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / min(uRes.x, uRes.y);
+
+  /* 球面穹顶投影 */
+  float dRaw = length(uv) / DR;
+  float dc   = clamp(dRaw, 0.0, 1.0);
+  float arc  = asin(dc) / (PI * 0.5);
+  float ang  = atan(uv.y, uv.x);
+  vec2  gp   = mix(uv / DR, vec2(cos(ang), sin(ang)) * arc, uWarp);
+
+  /* uTime 由 JS 按速度积分而来：拖动"流动速度"时不会让整幅图案瞬移 */
+  float t   = uTime;
+  float rot = t * 0.05 + 0.12 * sin(t * 0.05);
+  mat2  rm  = mat2(cos(rot), -sin(rot), sin(rot), cos(rot));
+  vec2  grid = rm * gp * uDensity;
+
+  vec4  hx  = hexGrid(grid);
+  float ed  = hexEdge(hx.xy);
+  float aa  = max(fwidth(ed), 1e-4);
+
+  /* 能量涌动流 */
+  float flow = fbm(grid * 0.34 + vec2(-t*0.13, t*0.07));
+  float rnd  = hash21(hx.zw * 1.31 + 5.7);
+
+  /* 发光边缘：能量涌动处更亮 */
+  float edge = smoothstep(0.5 - 0.045 - aa*2.0, 0.5 - 0.045 + aa*2.0, ed);
+  edge *= 0.5 + 0.9 * flow;
+
+  /* 熔融单元填充：局部能量炽热点 */
+  float inner = smoothstep(0.5, 0.16, ed);
+  float ember = smoothstep(0.4, 0.85, flow + 0.5 * sin(t*1.1 + rnd*6.283));
+  ember *= inner * (0.25 + 0.75 * rnd);
+
+  /* 同心能量波前：从中心向外扩散。
+     用 sin 包络让波前在循环端点亮度归零 —— 否则 fract() 的跳变会让波前
+     "啪"地瞬移回中心，看着就是周期性闪一下。 */
+  float R  = length(gp);
+  float c1 = fract(t*0.20);
+  float c2 = fract(t*0.20 + 0.5);
+  float wave  = exp(-pow((R - c1) / 0.055, 2.0)) * sin(c1 * PI);
+  float wave2 = exp(-pow((R - c2) / 0.085, 2.0)) * sin(c2 * PI) * 0.55;
+
+  /* 冲击涟漪（首尾平滑淡入淡出，避免冲击点出现/过期时硬跳） */
+  float hit = 0.0;
+  for(int i = 0; i < ${MAX_HITS}; i++){
+    vec4 H = uHits[i];
+    if(H.w <= 0.001) continue;
+    float age = uTime - H.z;
+    if(age < 0.0 || age > 4.0) continue;
+    float env  = smoothstep(0.0, 0.08, age) * (1.0 - smoothstep(3.4, 4.0, age));
+    float dist = length(gp - H.xy);
+    float rr   = age * 0.5;
+    float ring  = exp(-pow((dist - rr) / 0.075, 2.0));
+    float ring2 = exp(-pow((dist - rr * 0.55) / 0.05, 2.0)) * 0.55;
+    hit += (ring + ring2) * exp(-age * 1.1) * H.w * env;
+    hit += exp(-dist * 9.0) * exp(-age * 3.5) * H.w * env;
+  }
+
+  /* 鼠标白热聚焦。
+     [鼠标闪烁修复] 光斑调宽 + 大幅削弱它对蜂巢边缘的依赖：
+     原来半径小、强度又乘 (0.4+1.5*edge)，光斑扫过六边形格阵时亮度会被底下的
+     图案逐格调制，叠上 bloom 就是一眼可见的"一动鼠标就闪"。 */
+  float md = length(gp - uMouse);
+  float mg = exp(-md * md * 20.0) * uMouseStr;
+
+  float inside  = 1.0 - smoothstep(1.0, 1.014, dRaw);
+  float halo    = exp(-pow(max(0.0, dRaw - 1.0) / 0.13, 2.0));
+  float rimline = exp(-pow((dRaw - 1.0) / 0.01, 2.0));
+
+  vec3 cMain  = hsv2rgb(vec3(uHue, 0.85, 1.0));
+  vec3 cHot   = hsv2rgb(vec3(fract(uHue + 0.055), 0.30, 1.0));
+  vec3 cEmber = hsv2rgb(vec3(0.03, 0.95, 1.0));   /* 固定红橙冲击色 */
+
+  /* 深炭底色 */
+  float vig = clamp(1.0 - 0.85 * length(uv * vec2(1.0, 1.12)), 0.0, 1.0);
+  vec3 col = mix(vec3(0.020,0.012,0.006), vec3(0.045,0.026,0.012), vig);
+  col += cMain * 0.03 * fbm(uv * 2.4 + vec2(t*0.02, -t*0.015));
+  col += vec3(1.0,0.92,0.72) * pow(hash21(floor(uv * 720.0)), 240.0) * 1.1;
+
+  /* 合成 */
+  vec3 sh = vec3(0.0);
+  sh += cMain  * edge * 1.5;
+  sh += cMain  * ember * 0.55;
+  sh += cHot   * (wave + wave2) * (0.4 + 1.1 * edge) * 0.9;
+  sh += cHot   * mg * (0.72 + 0.5 * edge) * (0.45 + 0.55 * inside);
+  sh += cEmber * hit * 2.0;
+
+  col += sh * inside * uGlow;
+  col += cMain * halo * 0.32 * uGlow;
+  col += cHot  * rimline * 1.2 * uGlow;
+
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+const bgMesh = new THREE.Mesh(
+  new THREE.PlaneGeometry(2,2),
+  new THREE.ShaderMaterial({
+    uniforms:bgUniforms, vertexShader:bgVert, fragmentShader:bgFrag,
+    depthWrite:false, depthTest:true
+  })
+);
+bgMesh.frustumCulled = false;
+bgMesh.renderOrder = -10;
+scene.add(bgMesh);
+
+/* ============================================================
+   3D 熔核核心：八面体晶体 + 能量粒子环带
+============================================================ */
+const core = new THREE.Group();
+scene.add(core);
+
+// 内核八面体晶体
+const crystalMat = new THREE.MeshStandardMaterial({
+  color:0x2a1606, metalness:1.0, roughness:0.22,
+  emissive:new THREE.Color(0x7a3d08), emissiveIntensity:1.0, flatShading:true
+});
+const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.74, 0), crystalMat);
+core.add(crystal);
+
+// 八面体线框描边
+const crystalWire = new THREE.LineSegments(
+  new THREE.EdgesGeometry(new THREE.OctahedronGeometry(0.76, 0)),
+  new THREE.LineBasicMaterial({ color:0xffd98a, transparent:true, opacity:0.9 })
+);
+core.add(crystalWire);
+
+// 熔融脉动能量壳
+const shellUniforms = {
+  uTime:{value:0}, uFlash:{value:0},
+  uColor:{value:new THREE.Color().setHSL(P.hue, 0.85, 0.6)}
+};
+const shell = new THREE.Mesh(
+  new THREE.IcosahedronGeometry(1.9, 5),
+  new THREE.ShaderMaterial({
+    uniforms:shellUniforms,
+    transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide,
+    vertexShader:`
+      varying vec3 vN; varying vec3 vW; varying vec3 vP;
+      void main(){
+        vP = position;
+        vec4 wp = modelMatrix * vec4(position, 1.0);
+        vW = wp.xyz;
+        vN = normalize(mat3(modelMatrix) * normal);
+        gl_Position = projectionMatrix * viewMatrix * wp;
+      }`,
+    fragmentShader:`
+      precision highp float;
+      uniform float uTime; uniform float uFlash; uniform vec3 uColor;
+      varying vec3 vN; varying vec3 vW; varying vec3 vP;
+      float h(vec2 p){ p=fract(p*vec2(93.7,71.3)); p+=dot(p,p+27.1); return fract(p.x*p.y); }
+      float vn(vec2 p){
+        vec2 i=floor(p), f=fract(p);
+        f=f*f*(3.0-2.0*f);
+        float a=h(i), b=h(i+vec2(1.0,0.0)), c=h(i+vec2(0.0,1.0)), d=h(i+vec2(1.0,1.0));
+        return mix(mix(a,b,f.x), mix(c,d,f.x), f.y);
+      }
+      void main(){
+        vec3 V = normalize(cameraPosition - vW);
+        float f = pow(1.0 - abs(dot(normalize(vN), V)), 2.6);
+        float m    = smoothstep(0.55, 0.9, vn(vP.xy*2.6 + uTime*0.35));
+        float rise = smoothstep(0.0, 1.0, fract(vP.y*0.55 - uTime*0.14));
+        float a = f*(0.45 + m*0.55 + rise*0.25) + uFlash*(f*1.5 + 0.2);
+        vec3 col = uColor*a*1.7 + vec3(1.0,0.9,0.7)*(m*0.05 + rise*0.04);
+        gl_FragColor = vec4(col, 1.0);
+      }`
+  })
+);
+core.add(shell);
+
+// 能量粒子环带（着色器内沿环流动）
+function makeEnergyRing(radius, speed, tilt, count, hueOff){
+  const g = new THREE.BufferGeometry();
+  const pos = new Float32Array(count*3);
+  const ang = new Float32Array(count);
+  for(let i=0;i<count;i++){
+    const a = (i/count)*Math.PI*2;
+    ang[i] = a;
+    pos[i*3] = Math.cos(a);
+    pos[i*3+1] = 0;
+    pos[i*3+2] = Math.sin(a);
+  }
+  g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  g.setAttribute('aAng', new THREE.BufferAttribute(ang,1));
+  const mat = new THREE.ShaderMaterial({
+    uniforms:{
+      uTime:{value:0}, uRadius:{value:radius}, uSpeed:{value:speed},
+      uColor:{value:new THREE.Color().setHSL(P.hue + hueOff, 0.85, 0.7)}
+    },
+    transparent:true, blending:THREE.AdditiveBlending, depthWrite:false,
+    vertexShader:`
+      attribute float aAng; uniform float uTime; uniform float uRadius; uniform float uSpeed;
+      varying float vA;
+      void main(){
+        float a = aAng + uTime*uSpeed;
+        vec3 p = vec3(cos(a), 0.0, sin(a)) * uRadius;
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        vA = 0.45 + 0.55*sin(uTime*3.0 + aAng*7.0);
+        gl_PointSize = (2.0 + vA*2.4) * (240.0 / -mv.z);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader:`
+      precision highp float; uniform vec3 uColor; varying float vA;
+      void main(){
+        float d = length(gl_PointCoord - 0.5);
+        if(d > 0.5) discard;
+        float a = smoothstep(0.5, 0.0, d);
+        gl_FragColor = vec4(uColor * a * vA * 2.0, a);
+      }`
+  });
+  const pts = new THREE.Points(g, mat);
+  pts.rotation.set(tilt[0], tilt[1], tilt[2]);
+  pts.userData.mat = mat;
+  return pts;
+}
+const rings = [
+  makeEnergyRing(1.15,  0.9, [0, 0, 0],        340, 0.0),
+  makeEnergyRing(1.52, -0.6, [0.9, 0, 0.3],    360, 0.015),
+  makeEnergyRing(1.88,  0.45,[-0.7, 0, -0.4],  380, -0.012)
+];
+rings.forEach(r => core.add(r));
+
+// 稀疏外层粒子
+const PN = 700;
+const pPos = new Float32Array(PN*3), pSeed = new Float32Array(PN);
+for(let i=0;i<PN;i++){
+  const r = 1.3 + Math.random()*2.9;
+  const th = Math.random()*Math.PI*2, ph = Math.acos(2*Math.random()-1);
+  pPos[i*3]   = r*Math.sin(ph)*Math.cos(th);
+  pPos[i*3+1] = r*Math.cos(ph)*0.7;
+  pPos[i*3+2] = r*Math.sin(ph)*Math.sin(th);
+  pSeed[i] = Math.random();
+}
+const pGeo = new THREE.BufferGeometry();
+pGeo.setAttribute('position', new THREE.BufferAttribute(pPos,3));
+pGeo.setAttribute('aSeed', new THREE.BufferAttribute(pSeed,1));
+const particles = new THREE.Points(pGeo, new THREE.ShaderMaterial({
+  uniforms:{ uTime:{value:0}, uColor:{value:new THREE.Color().setHSL(P.hue,0.75,0.78)} },
+  transparent:true, blending:THREE.AdditiveBlending, depthWrite:false,
+  vertexShader:`
+    attribute float aSeed; uniform float uTime; varying float vA;
+    void main(){
+      vec3 p = position;
+      p.y += sin(uTime*0.6 + aSeed*22.0)*0.16;
+      vec4 mv = modelViewMatrix * vec4(p,1.0);
+      vA = 0.35 + 0.65*abs(sin(uTime*1.6 + aSeed*40.0));
+      gl_PointSize = (1.2 + aSeed*2.4) * (260.0 / -mv.z);
+      gl_Position = projectionMatrix * mv;
+    }`,
+  fragmentShader:`
+    precision highp float; uniform vec3 uColor; varying float vA;
+    void main(){
+      float d = length(gl_PointCoord - 0.5);
+      if(d > 0.5) discard;
+      float a = smoothstep(0.5, 0.0, d);
+      gl_FragColor = vec4(uColor * a * vA * 1.7, a);
+    }`
+}));
+core.add(particles);
+
+/* 灯光 */
+scene.add(new THREE.AmbientLight(0x3a2410, 1.2));
+const l1 = new THREE.PointLight(0xffb340, 60, 24, 2); l1.position.set(3,3,3);  scene.add(l1);
+const l2 = new THREE.PointLight(0xff5a2e, 30, 24, 2); l2.position.set(-3.4,-1.6,2.2); scene.add(l2);
+const l3 = new THREE.DirectionalLight(0xffe6c0, 1.0); l3.position.set(-1,2,-3); scene.add(l3);
+
+/* ============================================================
+   后处理
+   [黑闪修复] 封装成 buildComposer()：图形上下文丢失后需要整条重建，
+   只重建 render target 容易留下失效引用，整套换新最稳。
+============================================================ */
+let composer;
+function buildComposer(){
+  if(composer){ try{ composer.dispose(); }catch(e){} }
+  composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.85, 0.62, 0.55));
+  composer.addPass(new OutputPass());
+  /* EffectComposer 内部缓存了构造时的 pixelRatio，DPR 变了必须显式同步 */
+  composer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+  composer.setSize(innerWidth, innerHeight);
+}
+buildComposer();
+
+/* ============================================================
+   交互
+============================================================ */
+let hitCount = 0, integrity = 100;
+const clock = new THREE.Clock();
+
+function screenToDome(px, py){
+  const m = Math.min(innerWidth, innerHeight);
+  const ux = (px - innerWidth/2)/m, uy = (py - innerHeight/2)/m;
+  const d = Math.hypot(ux, uy)/DOME_R;
+  const dc = Math.min(d, 1);
+  const arc = Math.asin(dc)/(Math.PI/2);
+  const ang = Math.atan2(uy, ux);
+  const dx = Math.cos(ang)*arc, dy = Math.sin(ang)*arc;
+  const fx = ux/DOME_R, fy = uy/DOME_R;
+  return [ fx*(1-P.warp) + dx*P.warp, fy*(1-P.warp) + dy*P.warp ];
+}
+
+/* 冲击点槽位分配：优先用空闲槽，全占用时覆盖最老的一个。
+   原来固定 hitIdx % MAX_HITS，连点时会覆盖掉还没演完的冲击，导致涟漪突然消失/跳动。 */
+function allocHitSlot(){
+  const H = bgUniforms.uHits.value;
+  const now = bgUniforms.uTime.value;
+  let oldest = 0, oldestAge = -Infinity;
+  for(let i=0;i<MAX_HITS;i++){
+    const age = now - H[i].z;
+    if(H[i].w <= 0.001 || age > 4.0) return H[i];
+    if(age > oldestAge){ oldestAge = age; oldest = i; }
+  }
+  return H[oldest];
+}
+
+function addHit(gx, gy, strength = 1){
+  const h = allocHitSlot();
+  h.set(gx, gy, bgUniforms.uTime.value, strength);
+  hitCount++;
+  shellUniforms.uFlash.value = Math.min(1.2, shellUniforms.uFlash.value + 0.75*strength);
+  integrity = Math.max(42, integrity - 1.6*strength);
+  document.getElementById('hits').textContent = hitCount;
+}
+
+/* scale 用于区分"用户主动冲击"和"自动扰动"：
+   自动扰动原来和手点一样猛，每 2~6 秒一次全屏亮闪，很容易被当成闪屏。 */
+function randomHit(scale = 1){
+  const a = Math.random()*Math.PI*2, r = Math.pow(Math.random(), .6)*0.92;
+  addHit(Math.cos(a)*r, Math.sin(a)*r, (0.6 + Math.random()*0.6) * scale);
+}
+
+const mouseTarget = new THREE.Vector2(9,9);
+let mouseActive = 0, parallax = new THREE.Vector2();
+let pointerRaf = 0, pendingEvt = null;
+
+function onPointer(e){
+  pendingEvt = e;
+  if(pointerRaf) return;
+  pointerRaf = requestAnimationFrame(()=>{
+    pointerRaf = 0;
+    const ev = pendingEvt;
+    if(!ev) return;
+    const y = innerHeight - ev.clientY;
+    const g = screenToDome(ev.clientX, y);
+    mouseTarget.set(g[0], g[1]);
+    mouseActive = 1;
+    /* 视差（整颗熔核跟着鼠标偏移）仍然只在画布上响应，
+       保留"操作右下角面板时不牵动场景"的原有手感 */
+    if(ev.target === renderer.domElement){
+      parallax.set((ev.clientX/innerWidth - 0.5), (ev.clientY/innerHeight - 0.5));
+    }
+  });
+}
+/* [鼠标闪烁修复] 指针跟踪挂在 window 上，而不是只挂在画布上。
+   原来用画布上的 pointerleave 熄灭白热焦点，但右下角控制面板会抢走指针：
+   鼠标一滑到面板上，画布就收到 pointerleave，焦点立刻开始熄灭；移回画布又
+   重新点亮。来回扫过面板就是在反复开关，看起来就是"鼠标一动就闪"。
+   现在：位置全程连续跟踪（不会中途冻结、也不会移回来时飞一段），
+   只有指针真的移出窗口（relatedTarget 为 null）才熄灭。 */
+addEventListener('pointermove', onPointer, { passive:true });
+addEventListener('pointerout', e=>{ if(!e.relatedTarget) mouseActive = 0; }, { passive:true });
+addEventListener('blur', ()=>{ mouseActive = 0; });
+renderer.domElement.addEventListener('pointerdown', e=>{
+  const g = screenToDome(e.clientX, innerHeight - e.clientY);
+  addHit(g[0], g[1], 1.25);
+});
+
+/* 面板绑定 */
+const ui = {
+  density:['sDensity','oDensity', v=>v.toFixed(1)],
+  speed  :['sSpeed','oSpeed',   v=>v.toFixed(2)],
+  glow   :['sGlow','oGlow',     v=>v.toFixed(2)],
+  hue    :['sHue','oHue',       v=>Math.round(v*360)+'°'],
+  warp   :['sWarp','oWarp',     v=>v.toFixed(2)]
+};
+/* skipKey：正在被拖动的那个滑块不回写自己的 value（会和浏览器拖拽状态打架，表现为滑块抖动）。
+   注意只跳过 value 回写，数值回显 output 仍然要实时更新。 */
+function syncUI(skipKey){
+  for(const k in ui){
+    const [si, oi, fmt] = ui[k];
+    if(k !== skipKey){
+      const s = document.getElementById(si);
+      if(s.value !== String(P[k])) s.value = P[k];
+    }
+    const o = document.getElementById(oi);
+    const txt = fmt(P[k]);
+    if(o.textContent !== txt) o.textContent = txt;
+  }
+
+  /* 数值 -> WebGL uniform，只改共享对象，不产生 DOM 写入 */
+  bgUniforms.uDensity.value = P.density;
+  bgUniforms.uGlow.value    = P.glow;
+  bgUniforms.uHue.value     = P.hue;
+  bgUniforms.uWarp.value    = P.warp;
+
+  const c = new THREE.Color().setHSL(P.hue, 0.85, 0.62);
+  shellUniforms.uColor.value.copy(c);
+  crystalMat.emissive.copy(new THREE.Color().setHSL(P.hue, 0.95, 0.26));
+  crystalWire.material.color.copy(new THREE.Color().setHSL(P.hue, 0.8, 0.78));
+  particles.material.uniforms.uColor.value.copy(new THREE.Color().setHSL(P.hue, 0.75, 0.8));
+  rings.forEach((r, i) => {
+    const off = [0.0, 0.015, -0.012][i];
+    r.userData.mat.uniforms.uColor.value.copy(new THREE.Color().setHSL(P.hue + off, 0.85, 0.7));
+  });
+  l1.color.copy(c);
+}
+
+/* UI 强调色：只在色温真的跨过一档（3°）时才写 DOM，且用 rAF 合并。
+   原实现每收到一次 input 事件就往 :root 写 --gold，拖动滑块时相当于
+   每秒几十次全文档样式重算 + 固定层重绘 —— 这正是"拖色温时满屏闪"的主因。 */
+let themeQ = -999, themeRaf = 0;
+function scheduleTheme(){
+  if(themeRaf) return;
+  themeRaf = requestAnimationFrame(()=>{
+    themeRaf = 0;
+    const q = Math.round(P.hue * 360 / 3) * 3;
+    if(q === themeQ) return;
+    themeQ = q;
+    const hex = '#' + new THREE.Color().setHSL(q/360, 0.85, 0.72).getHexString();
+    document.body.style.setProperty('--gold', hex);   /* 写在 body 上，作用域最小 */
+  });
+}
+
+for(const k in ui){
+  document.getElementById(ui[k][0]).addEventListener('input', e=>{
+    P[k] = parseFloat(e.target.value);
+    syncUI(k);
+    if(k === 'hue') scheduleTheme();
+  });
+  /* 松手时再对齐一次全部控件 */
+  document.getElementById(ui[k][0]).addEventListener('change', ()=> syncUI());
+}
+let autoPerturb = true, panelHidden = false;
+document.getElementById('bImpact').onclick = ()=> randomHit(1.15);
+document.getElementById('bAuto').onclick = e=>{
+  autoPerturb = !autoPerturb;
+  e.target.textContent = '自动扰动 · ' + (autoPerturb ? '开' : '关');
+};
+document.getElementById('bRotate').onclick = e=>{
+  controls.autoRotate = !controls.autoRotate;
+  e.target.textContent = '自动旋转 · ' + (controls.autoRotate ? '开' : '关');
+};
+document.getElementById('bReset').onclick = ()=>{ Object.assign(P, DEF); syncUI(); scheduleTheme(); };
+addEventListener('keydown', e=>{
+  if(e.key === 'h' || e.key === 'H'){
+    panelHidden = !panelHidden;
+    document.getElementById('panel').classList.toggle('hidden', panelHidden);
+  }
+  if(e.code === 'Space'){ e.preventDefault(); randomHit(1.15); }
+});
+syncUI();
+scheduleTheme();
+
+/* 系统开启"减少动态效果"时，默认关掉自转与自动扰动（全屏周期性亮暗对这类用户最难受） */
+if(REDUCE_MOTION){
+  autoPerturb = false;
+  controls.autoRotate = false;
+  document.getElementById('bAuto').textContent   = '自动扰动 · 关';
+  document.getElementById('bRotate').textContent = '自动旋转 · 关';
+}
+
+/* ============================================================
+   [黑闪修复·核心] 自适应：统一在 tick() 内部、每帧渲染之前应用
+   ------------------------------------------------------------
+   原实现把 resize 丢进一个独立的 requestAnimationFrame 里。rAF 回调按注册顺序
+   执行，而 tick 早在上一帧就注册好了自己，于是顺序变成：
+       同一帧内  →  tick：用旧缓冲渲染一次
+                 →  resize 回调：setSize/setPixelRatio 重建绘图缓冲
+   重建会把缓冲清成 (0,0,0)，紧接着浏览器就把这一帧刷上屏 ——
+   每一次改窗口大小 / 最大化 / Ctrl+滚轮缩放 / 把窗口拖到另一块缩放比不同的屏，
+   都会稳定黑一帧。这是"黑闪"最主要的来源。
+   现在改成在 tick 里"先应用尺寸变化、再渲染"，重建与重画同帧完成，中间不可能上屏。
+============================================================ */
+let lastW = 0, lastH = 0, lastDpr = 0, needResize = true;
+
+function applyResize(force){
+  const w = innerWidth, h = innerHeight, dpr = Math.min(devicePixelRatio, 1.75);
+  if(!force && !needResize && w === lastW && h === lastH && dpr === lastDpr) return false;
+  const sizeChanged = (w !== lastW || h !== lastH);
+  const dprChanged  = (dpr !== lastDpr);
+  needResize = false;
+  lastW = w; lastH = h; lastDpr = dpr;
+
+  camera.aspect = w/h; camera.updateProjectionMatrix();
+
+  /* 只在真的变化时才去设置：setSize / setPixelRatio 都会重建后处理的多级 render
+     target（bloom 一层就有好几张），每次重建都不便宜，拖动窗口时别重复重建。 */
+  if(dprChanged){
+    renderer.setPixelRatio(dpr);
+    if(composer.setPixelRatio) composer.setPixelRatio(dpr);
+  }
+  if(sizeChanged || dprChanged){
+    renderer.setSize(w, h);
+    composer.setSize(w, h);
+  }
+  bgUniforms.uRes.value.set(renderer.domElement.width, renderer.domElement.height);
+  return true;
+}
+function requestResize(){ needResize = true; }
+addEventListener('resize', requestResize, { passive:true });
+addEventListener('orientationchange', requestResize, { passive:true });
+
+/* devicePixelRatio 变化（Ctrl +/- 缩放、把窗口拖到另一块缩放比不同的显示器）
+   不一定伴随 resize 事件，所以单独盯一下分辨率媒体查询。 */
+function watchDpr(){
+  let mq;
+  try{ mq = matchMedia('(resolution: ' + devicePixelRatio + 'dppx)'); }catch(e){ return; }
+  const on = ()=>{ needResize = true; watchDpr(); };
+  if(mq.addEventListener) mq.addEventListener('change', on, { once:true });
+  else if(mq.addListener) mq.addListener(on);
+}
+watchDpr();
+
+/* 初次尺寸不在这里算：交给首帧的 tick 统一应用，保证"重建缓冲"和"首帧渲染"同帧 */
+
+let paused = document.hidden;   /* 后台标签页里 rAF 会被节流，先取初始可见性 */
+
+/* [黑闪修复·续] 恢复可见时"立刻同步重画一帧"。
+   ------------------------------------------------------------
+   后端 rAF 不跑（或被节流），页面处于静止。重新可见的那一刻，浏览器会合成这个
+   标签页：如果它在后台期间丢掉了绘图缓冲，合成出来的就是一张纯黑图，而页面要等到
+   下一个 rAF 才有机会重画 —— 中间那一帧就是"切回来黑闪一下"。
+   上面给 renderer 开 preserveDrawingBuffer 是从根源上保住缓冲，这里再补一道：
+   在"恢复"事件里同步渲染一帧，让浏览器无论何时合成都能拿到当前画面。
+   同时把这段时间里可能发生的尺寸/DPI 变化（分屏、投屏、系统缩放）一并应用掉。 */
+function renderOnResume(){
+  if(ctxLost) return;                    /* 上下文都丢了，交给丢失/恢复那套流程 */
+  clock.getDelta();                      /* 丢掉后台累积的时间，避免恢复瞬间画面跳变 */
+  try{
+    applyResize(true);
+    composer.render();
+  }catch(e){}
+}
+document.addEventListener('visibilitychange', ()=>{
+  paused = document.hidden;
+  if(!paused) renderOnResume();
+});
+addEventListener('pageshow', renderOnResume);
+addEventListener('focus', renderOnResume);
+/* Page Lifecycle：浏览器可能直接冻结/解冻页面，冻结期间同样不渲染 */
+document.addEventListener('freeze', ()=>{ paused = true; }, { passive:true });
+document.addEventListener('resume', ()=>{ paused = false; renderOnResume(); }, { passive:true });
+
+/* ============================================================
+   遮罩控制
+============================================================ */
+const loadingEl = document.getElementById('loading');
+const ltxtEl   = document.getElementById('ltxt');
+let maskTimer = 0;
+
+/* 把遮罩盖回来。这里刻意不走过渡：从"正在淡出"的状态淡回不透明，
+   中间仍然会露出底下的画面 —— 而需要盖回来的场合，底下正是黑屏。 */
+function showMask(text){
+  if(maskTimer){ clearTimeout(maskTimer); maskTimer = 0; }
+  if(text && ltxtEl) ltxtEl.textContent = text;
+  loadingEl.style.display = '';
+  loadingEl.style.transition = 'none';
+  loadingEl.classList.remove('off');
+  void loadingEl.offsetWidth;      /* 立刻生效 */
+  loadingEl.style.transition = '';
+}
+function fadeOutMask(){
+  loadingEl.classList.add('off');
+  /* 淡出结束后彻底移出合成层，避免残留重绘 */
+  maskTimer = setTimeout(()=>{ loadingEl.style.display = 'none'; maskTimer = 0; }, 700);
+}
+
+/* ============================================================
+   揭幕 / 交叉淡出（必须定义在主循环之前：tick() 会调用它）
+============================================================ */
+let readyDone = false;      /* 已完成揭幕 */
+let firstFrame = false;     /* 首帧已渲染并上屏 */
+let fontsDone  = false;     /* 字体已就绪（或已超时兜底） */
+let revealTries = 0, revealStart = 0;
+
+/* [黑闪修复] 揭幕前先确认"画布真的画出了东西"：
+   读一小片真实像素，若结果是黑的就继续等，绝不去揭一张黑画布 ——
+   任何未知原因（驱动异常、后处理链路没跑通）导致的黑帧都挡在这里，
+   用户看到的是"还在加载"，而不是黑闪一下。
+   必须在 composer.render() 之后、同一个任务里立刻读，读到的才是这一帧的结果。 */
+function frameHasContent(){
+  try{
+    const gl = renderer.getContext();
+    const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+    if(!w || !h) return false;
+    const sw = Math.min(48, w), sh = Math.min(48, h);
+    const px = new Uint8Array(sw*sh*4);
+    gl.readPixels((w - sw) >> 1, (h - sh) >> 1, sw, sh, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    let sum = 0, max = 0;
+    for(let i = 0; i < px.length; i += 4){
+      const v = px[i]*0.3 + px[i+1]*0.6 + px[i+2]*0.1;
+      sum += v;
+      if(v > max) max = v;
+    }
+    return max > 10 && sum / (px.length/4) > 1.0;
+  }catch(e){
+    return true;   /* 读不出像素就不要把人永远卡在遮罩上 */
+  }
+}
+
+function revealScene(){
+  if(readyDone || !firstFrame || !fontsDone || ctxLost) return;
+
+  /* 首轮先把着色器编译和两帧完整合成（含 bloom 的多级降采样）跑完，
+     否则揭幕那一瞬间会卡一下、并带出一帧没画完的画面。 */
+  if(revealTries === 0){
+    try{ renderer.compile(scene, camera); }catch(e){}
+    revealStart = performance.now();
+  }
+  composer.render();
+  composer.render();
+
+  if(!frameHasContent()){
+    revealTries++;
+    /* 还没画出来：不揭幕，下一帧再试。用时间而不是帧数兜底 ——
+       软件渲染或低端 GPU 上一帧可能要几百毫秒，按帧数算会等太久。 */
+    if(performance.now() - revealStart < 2800) return;
+    readyDone = true;      /* 兜底：别把用户永远卡在遮罩上 */
+    showLoadError('画面似乎未能渲染出来，请点击下方按钮重试');
+    return;
+  }
+
+  readyDone = true;
+  requestAnimationFrame(fadeOutMask);
+}
+
+/* 等字体加载完，避免揭幕瞬间文字重排造成的二次抖动；
+   字体 ready 事件不触发时也有兜底，不会把遮罩卡死。
+   注意这里只置标志、不直接揭幕：像素校验必须在"刚渲染完"的同一个任务里做，
+   所以揭幕时机统一交给 tick() 驱动。 */
+if(document.fonts && document.fonts.ready){
+  document.fonts.ready.then(()=>{ fontsDone = true; }, ()=>{ fontsDone = true; });
+}else{
+  fontsDone = true;
+}
+setTimeout(()=>{ fontsDone = true; }, 1800);
+
+/* ============================================================
+   [黑闪修复] 图形上下文丢失 / 恢复
+   ------------------------------------------------------------
+   切独显、休眠唤醒、驱动重置、长时间后台都可能掉上下文，掉的瞬间画布整屏变黑。
+   原实现只在丢失时 preventDefault，没有任何兜底画面：丢失多久，用户就看着黑屏多久。
+   现在：丢失即刻把遮罩盖回来（看到的是"正在恢复"而不是黑屏），
+   恢复后重建整条后处理链路并预热，再通过上面那套"确认有内容"的流程重新揭幕。
+============================================================ */
+let ctxLost = false, restoreTimer = 0;
+
+canvas.addEventListener('webglcontextlost', e=>{
+  e.preventDefault();          /* 必须阻止默认行为，上下文才有机会恢复 */
+  ctxLost = true;
+  paused = true;               /* 别拿失效的 GL 资源继续画 */
+  if(!readyDone || restoreTimer) return;
+  showMask('图形上下文丢失，正在恢复 …');
+  restoreTimer = setTimeout(()=>{
+    restoreTimer = 0;
+    if(!ctxLost) return;
+    loadingEl.classList.add('fail');
+    if(ltxtEl) ltxtEl.textContent = '图形上下文未能恢复，请刷新页面';
+  }, 8000);
+}, false);
+
+canvas.addEventListener('webglcontextrestored', ()=>{
+  if(restoreTimer){ clearTimeout(restoreTimer); restoreTimer = 0; }
+  /* three 会自己重建它的 GL 资源，但后处理链路的 render target 不在此列 */
+  buildComposer();
+  try{ renderer.compile(scene, camera); }catch(e){}
+  ctxLost = false;
+  readyDone = false; revealTries = 0;   /* 重新走一遍"确认有内容才揭幕" */
+  paused = document.hidden;
+}, false);
+
+/* ============================================================
+   主循环
+============================================================ */
+let nextHit = 2.2, frames = 0, fpsT = performance.now();
+let shaderTime = 0;   /* 按"流动速度"积分的时间：改速度只改变后续流速，画面不跳 */
+const fpsEl = document.getElementById('fps'), intEl = document.getElementById('integrity');
+
+let repairStreak = 0;
+
+function tick(){
+  requestAnimationFrame(tick);
+  if(paused){ clock.getDelta(); return; }
+
+  /* [黑闪修复·核心] 先在帧内应用尺寸/DPR 变化，再渲染。
+     setSize/setPixelRatio 会重建绘图缓冲并把它清成黑色；
+     只要"重建"和"重画"在同一个回调里完成，浏览器就没有机会刷出那张黑图。
+     顺带也覆盖了"打开页面后浏览器自己补发一次 resize"（窗口贴边/最大化、
+     移动端地址栏收放）这种几乎必现的首屏黑闪。 */
+  if(needResize || Math.min(devicePixelRatio, 1.75) !== lastDpr) applyResize(true);
+
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t  = clock.elapsedTime;
+
+  shaderTime += dt * P.speed;
+  bgUniforms.uTime.value = shaderTime;
+  shellUniforms.uTime.value = t;
+  particles.material.uniforms.uTime.value = t;
+  rings.forEach(r => r.userData.mat.uniforms.uTime.value = t);
+
+  /* [鼠标闪烁修复] 平滑系数按 dt 归一化（折算成 60fps 下的等效系数）。
+     原来是"每帧固定系数"，帧率一波动，白热焦点跟手的快慢就跟着变
+     （实测 4fps 与 60fps 相差十几倍），移动鼠标时会明显忽快忽慢地抽。 */
+  const kFollow = 1 - Math.pow(1 - 0.12, dt * 60);
+  const kFade   = 1 - Math.pow(1 - 0.08, dt * 60);
+  bgUniforms.uMouse.value.lerp(mouseTarget, kFollow);
+  bgUniforms.uMouseStr.value += ((mouseActive ? 1 : 0) - bgUniforms.uMouseStr.value) * kFade;
+
+  shellUniforms.uFlash.value *= Math.pow(0.06, dt);
+  integrity = Math.min(100, integrity + dt*4.2);
+  const intTxt = integrity.toFixed(0) + '%';
+  /* 只在文本真正变化时写 DOM，避免每帧强制布局 */
+  if(intEl.textContent !== intTxt) intEl.textContent = intTxt;
+
+  if(autoPerturb){
+    nextHit -= dt;
+    if(nextHit <= 0){ randomHit(0.55); nextHit = 2 + Math.random()*4; }
+  }
+
+  crystal.rotation.y += dt*0.5; crystal.rotation.x += dt*0.22;
+  crystalWire.rotation.copy(crystal.rotation);
+  rings.forEach(r => { r.rotation.y += dt*0.08; });
+  particles.rotation.y -= dt*0.05;
+  const pulse = 1 + Math.sin(t*1.3)*0.012 + shellUniforms.uFlash.value*0.02;
+  shell.scale.setScalar(pulse);
+  crystalMat.emissiveIntensity = 0.8 + Math.sin(t*2.4)*0.3 + shellUniforms.uFlash.value*0.6;
+  l2.position.set(Math.cos(t*0.5)*3.6, -1.4, Math.sin(t*0.5)*3.6);
+
+  /* 视差回中同样按 dt 归一化，避免帧率波动时整颗熔核一顿一顿地跟手 */
+  const kCore = 1 - Math.pow(1 - 0.05, dt * 60);
+  core.position.x += (-parallax.x*0.42 - core.position.x)*kCore;
+  core.position.y += ( parallax.y*0.32 - core.position.y)*kCore;
+
+  controls.update();
+  composer.render();
+
+  /* 保险：浏览器可能因为缩放/跨屏在帧内隐式重建了绘图缓冲，
+     此时这一帧的尺寸与我们渲染时用的不一致，等于画歪了。
+     立刻按新尺寸重画一次 —— 仍然在同一帧内，不会上屏黑图。
+     连续不一致时不再反复重建，避免每帧都重建缓冲。 */
+  const gl = renderer.getContext();
+  const mismatch = gl.drawingBufferWidth  !== renderer.domElement.width ||
+                   gl.drawingBufferHeight !== renderer.domElement.height;
+  if(mismatch){
+    if(repairStreak < 3){          /* 只补几次；持续不一致就别每帧重建缓冲了 */
+      repairStreak++;
+      applyResize(true);
+      composer.render();
+    }
+  }else{
+    repairStreak = 0;
+  }
+
+  if(!firstFrame) firstFrame = true;
+  if(!readyDone) revealScene();      /* 首帧已上屏，可以揭幕了（含"确认有内容"的重试） */
+
+  frames++;
+  const now = performance.now();
+  if(now - fpsT > 500){
+    fpsEl.textContent = Math.round(frames*1000/(now - fpsT));
+    frames = 0; fpsT = now;
+  }
+}
+tick();
+
+/* 揭幕逻辑定义在主循环之前，见上方 "揭幕 / 交叉淡出" */
+</script>
+</body>
+</html>
